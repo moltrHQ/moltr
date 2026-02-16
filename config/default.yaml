@@ -1,0 +1,117 @@
+# =============================================================================
+# Moltr - Security Proxy Configuration for OpenClaw
+# =============================================================================
+# This is the default configuration. Override values via environment variables
+# prefixed with MOLTR_ or by mounting a custom config file.
+
+moltr:
+  # General settings
+  version: "0.1.0"
+  mode: "enforce"           # enforce | monitor | disabled
+  log_level: "INFO"         # DEBUG | INFO | WARNING | ERROR | CRITICAL
+
+# -----------------------------------------------------------------------------
+# AI Agent Settings
+# -----------------------------------------------------------------------------
+agent:
+  name: "openclaw"
+  max_concurrent_actions: 5
+  session_timeout_seconds: 3600
+  require_authentication: true
+
+# -----------------------------------------------------------------------------
+# Output Scanner
+# -----------------------------------------------------------------------------
+scanners:
+  output:
+    enabled: true
+    max_output_length: 50000       # Max characters per output to scan
+    detect_secrets: true            # Scan for API keys, tokens, passwords
+    detect_prompt_injection: true   # Detect prompt injection in output
+    secret_patterns:
+      - "AKIA[0-9A-Z]{16}"                  # AWS Access Key
+      - "sk-[a-zA-Z0-9]{48}"                # OpenAI API Key
+      - "ghp_[a-zA-Z0-9]{36}"               # GitHub Personal Access Token
+      - "xox[baprs]-[a-zA-Z0-9-]+"          # Slack Token
+      - "[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}:[0-9]+"  # IP:Port
+
+# -----------------------------------------------------------------------------
+# Action Validator
+# -----------------------------------------------------------------------------
+validators:
+  actions:
+    enabled: true
+    default_policy: "deny"          # deny | allow (deny = allowlist mode)
+    rate_limit:
+      enabled: true
+      max_actions_per_minute: 30
+      max_actions_per_hour: 500
+
+  # Network Firewall
+  network:
+    enabled: true
+    default_policy: "deny"
+    allowlist_file: "config/allowlists/domains.yaml"
+    block_private_networks: true    # Block 10.x, 172.16.x, 192.168.x
+    block_metadata_endpoints: true  # Block cloud metadata (169.254.169.254)
+    max_request_size_bytes: 1048576 # 1MB max outbound request
+
+  # Filesystem Guard
+  filesystem:
+    enabled: true
+    default_policy: "deny"
+    allowlist_file: "config/allowlists/paths.yaml"
+    monitor_honeypots: true
+    honeypot_directory: "honeypots/"
+    block_dotfiles: true            # Prevent access to .env, .git, etc.
+    block_system_paths: true        # Prevent access to /etc, /root, C:\Windows
+
+# -----------------------------------------------------------------------------
+# Kill Switch
+# -----------------------------------------------------------------------------
+killswitch:
+  enabled: true
+  auto_activate_on:
+    honeypot_access: true           # Auto-kill on honeypot file access
+    secret_leak_detected: true      # Auto-kill on detected secret exfiltration
+    rate_limit_exceeded: true       # Auto-kill on rate limit breach
+    integrity_violation: true       # Auto-kill on file integrity violation
+  cooldown_seconds: 300             # Minimum time before auto-reactivation
+  require_manual_deactivation: true # Require human to deactivate
+
+# -----------------------------------------------------------------------------
+# Alerts
+# -----------------------------------------------------------------------------
+alerts:
+  telegram:
+    enabled: false
+    bot_token: "${MOLTR_TELEGRAM_BOT_TOKEN}"
+    chat_id: "${MOLTR_TELEGRAM_CHAT_ID}"
+    severity_threshold: "medium"    # Only alert on this severity and above
+    rate_limit_per_minute: 10       # Max alerts per minute to prevent spam
+
+# -----------------------------------------------------------------------------
+# Integrity Watchdog
+# -----------------------------------------------------------------------------
+watchdog:
+  enabled: true
+  check_interval_seconds: 60
+  baseline_on_startup: true
+  monitored_paths:
+    - "config/"
+    - "honeypots/"
+    - "src/"
+  hash_algorithm: "sha256"
+
+# -----------------------------------------------------------------------------
+# Honeypots
+# -----------------------------------------------------------------------------
+honeypots:
+  enabled: true
+  directory: "honeypots/"
+  alert_on_access: true
+  files:
+    - "passwords.txt"
+    - "backup_keys.txt"
+    - ".env.backup"
+    - "wallet_seed.txt"

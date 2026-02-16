@@ -1,0 +1,41 @@
+version: "3.9"
+
+services:
+  moltr-security:
+    build: .
+    container_name: moltr-security
+    ports:
+      - "8420:8420"
+    volumes:
+      - ./config:/app/config:ro
+      - ./honeypots:/app/honeypots:ro
+      - moltr-logs:/app/logs
+    environment:
+      - MOLTR_MODE=enforce
+      - MOLTR_LOG_LEVEL=INFO
+      # Optional: Telegram alerts
+      # - MOLTR_TELEGRAM_BOT_TOKEN=your_bot_token
+      # - MOLTR_TELEGRAM_CHAT_ID=your_chat_id
+    restart: unless-stopped
+    networks:
+      - moltr-internal
+      - moltr-external
+
+  # Example: Your AI agent connects through Moltr
+  # agent:
+  #   image: your-agent-image
+  #   depends_on:
+  #     - moltr-security
+  #   environment:
+  #     - MOLTR_URL=http://moltr-security:8420
+  #   networks:
+  #     - moltr-internal    # Agent has NO direct internet access
+
+volumes:
+  moltr-logs:
+
+networks:
+  moltr-internal:
+    internal: true          # No direct internet for connected agents
+  moltr-external:
+    driver: bridge          # Only Moltr has external access

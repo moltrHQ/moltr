@@ -1,0 +1,161 @@
+# =============================================================================
+# Moltr - Shell Command Security Policy
+# =============================================================================
+# Controls which commands an AI agent is permitted to execute.
+# The ActionValidator loads this at startup.
+
+# -------------------------------------------------------------------------
+# Allowed commands (base command must match)
+# -------------------------------------------------------------------------
+allowed_commands:
+  # Python
+  - "python"
+  - "python3"
+  - "pip"
+  - "pip3"
+  - "pytest"
+
+  # Version control
+  - "git"
+
+  # JavaScript / Node
+  - "node"
+  - "npm"
+  - "bun"
+
+  # AI / Telegram Bot
+  - "claude"
+  - "ffmpeg"
+  - "whisper-cpp"
+
+  # File inspection (read-only)
+  - "ls"
+  - "dir"
+  - "cat"
+  - "head"
+  - "tail"
+  - "grep"
+  - "find"
+  - "wc"
+  - "type"
+  - "echo"
+
+  # File management (basic)
+  - "mkdir"
+  - "cd"
+  - "cp"
+
+  # Build tools
+  - "make"
+
+# -------------------------------------------------------------------------
+# Blocked commands (always denied, even if partially matching allowed)
+# -------------------------------------------------------------------------
+blocked_commands:
+  - "rm -rf"
+  - "sudo"
+  - "su"
+  - "ssh"
+  - "scp"
+  - "rsync"
+  - "kill"
+  - "killall"
+  - "pkill"
+  - "chmod 777"
+  - "nc"
+  - "ncat"
+  - "dd"
+  - "mkfs"
+  - "fdisk"
+  - "shutdown"
+  - "reboot"
+  - "format"
+  - "del /f /s"
+  - "powershell -enc"
+  - "base64 -d"
+
+# -------------------------------------------------------------------------
+# Network commands (separate rate limit: max 5 per minute)
+# -------------------------------------------------------------------------
+network_commands:
+  - "curl"
+  - "wget"
+  - "ping"
+  - "nslookup"
+
+# -------------------------------------------------------------------------
+# Risk levels: 0=harmless, 1=normal, 2=elevated, 3=dangerous (always blocked)
+# -------------------------------------------------------------------------
+risk_levels:
+  # Level 0 - Harmless (read-only, no side effects)
+  harmless:
+    - "ls"
+    - "dir"
+    - "cat"
+    - "echo"
+    - "head"
+    - "tail"
+    - "grep"
+    - "find"
+    - "wc"
+    - "type"
+    - "cd"
+
+  # Level 1 - Normal (standard dev tools)
+  normal:
+    - "python"
+    - "python3"
+    - "pip"
+    - "pip3"
+    - "pytest"
+    - "git"
+    - "node"
+    - "npm"
+    - "make"
+    - "mkdir"
+    - "cp"
+
+  # Level 2 - Elevated caution (system-level tools)
+  elevated:
+    - "docker"
+    - "curl"
+    - "wget"
+    - "ping"
+    - "nslookup"
+
+  # Level 3 - Dangerous (always blocked)
+  dangerous:
+    - "rm"
+    - "sudo"
+    - "su"
+    - "kill"
+    - "killall"
+    - "pkill"
+    - "ssh"
+    - "scp"
+    - "nc"
+    - "ncat"
+    - "dd"
+    - "mkfs"
+    - "fdisk"
+    - "chmod"
+    - "chown"
+    - "shutdown"
+    - "reboot"
+
+# -------------------------------------------------------------------------
+# Rate limits
+# -------------------------------------------------------------------------
+rate_limits:
+  max_commands_per_minute: 30
+  max_write_commands_per_minute: 10
+  max_network_commands_per_minute: 5
+
+# Write commands (count toward write rate limit)
+write_commands:
+  - "cp"
+  - "mkdir"
+  - "pip"
+  - "pip3"
+  - "npm"
+  - "git"

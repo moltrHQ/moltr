@@ -1,0 +1,44 @@
+# =============================================================================
+# Moltr Security - Allowed Filesystem Paths
+# =============================================================================
+# The AI agent may only access files within these directories.
+# All other file access will be blocked.
+#
+# Customize these paths for your agent's workspace.
+
+allowed_paths:
+  # Project workspace (adjust to your agent's working directory)
+  - "./src/"
+  - "./tests/"
+  - "./docs/"
+  - "./config/"
+
+  # Temporary files
+  - "/tmp/moltr/"
+
+  # Agent workspace (add your agent's allowed directories here)
+  # - "/home/agent/workspace/"
+  # - "/app/uploads/"
+
+# Explicitly blocked paths (always deny, even if inside allowed paths)
+blocked_paths:
+  # Secrets and credentials
+  - ".env"
+  - ".env.local"
+  - ".env.production"
+  - "credentials.json"
+  - "service-account.json"
+  - "id_rsa"
+  - "id_ed25519"
+
+  # System directories
+  - "/etc/shadow"
+  - "/etc/passwd"
+  - "/root/"
+  - "C:\\Windows\\System32\\"
+
+  # Honeypot directory (read triggers alert)
+  - "./honeypots/"
+
+  # Version control internals
+  - ".git/"

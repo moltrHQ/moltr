@@ -1,0 +1,144 @@
+# ============================================================
+# Moltr - Scan Patterns Configuration
+# ============================================================
+# Defensive security patterns for detecting accidental leaks.
+# The OutputScanner loads these at startup and checks agent
+# output against them to PREVENT data exfiltration.
+#
+# Users can add custom patterns or disable existing ones.
+# Each pattern has:
+#   - name:        Human-readable identifier
+#   - type:        Threat category
+#   - regex:       Python regex pattern to match
+#   - description: What this pattern detects
+# ============================================================
+
+# -------------------------------------------------------------------------
+# Lockdown — auto-lockdown after repeated leak detections
+# -------------------------------------------------------------------------
+lockdown:
+  max_incidents: 1       # Sofort-Lockdown nach dem ersten Leak
+  window_seconds: 600    # Zeitfenster in Sekunden (600 = 10 Minuten)
+
+patterns:
+  # --- API Keys and Tokens ---
+  - name: "OpenAI API Key"
+    type: "api_key"
+    regex: "sk-(?:proj|live|test|org)-[A-Za-z0-9\\-_]{20,}"
+    description: "Detects OpenAI scoped API keys (sk-proj-*, sk-live-*, etc.)"
+
+  - name: "OpenAI Legacy Key"
+    type: "api_key"
+    regex: "sk-[A-Za-z0-9]{32,}"
+    description: "Detects legacy OpenAI API keys (sk- + 32+ chars)"
+
+  - name: "Anthropic API Key"
+    type: "api_key"
+    regex: "sk-ant-[A-Za-z0-9\\-]{20,}"
+    description: "Detects Anthropic API keys"
+
+  - name: "AWS Access Key"
+    type: "api_key"
+    regex: "AKIA[0-9A-Z]{16}"
+    description: "Detects AWS access key IDs"
+
+  - name: "GitHub Token"
+    type: "api_key"
+    regex: "gh[ps]_[A-Za-z0-9]{36,}"
+    description: "Detects GitHub personal access and secret tokens"
+
+  - name: "Slack Token"
+    type: "api_key"
+    regex: "xox[bpras]-[A-Za-z0-9-]{10,}"
+    description: "Detects Slack bot/user tokens"
+
+  - name: "Generic Bearer Token"
+    type: "api_key"
+    regex: "Bearer\\s+[A-Za-z0-9_\\-\\.]{20,}"
+    description: "Detects Bearer authorization tokens"
+
+  - name: "Stripe API Key"
+    type: "api_key"
+    regex: "(?:sk|pk)_(?:live|test)_[A-Za-z0-9]{24,}"
+    description: "Detects Stripe secret and publishable keys"
+
+  - name: "Google Cloud API Key"
+    type: "api_key"
+    regex: "AIza[0-9A-Za-z\\-_]{35}"
+    description: "Detects Google Cloud API keys"
+
+  - name: "Supabase JWT"
+    type: "api_key"
+    regex: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\\.[A-Za-z0-9_\\-]{50,}"
+    description: "Detects Supabase anon/service role JWT tokens"
+
+  - name: "Telegram Bot Token"
+    type: "api_key"
+    regex: "[0-9]{8,10}:AA[A-Za-z0-9_\\-]{33}"
+    description: "Detects Telegram Bot API tokens"
+
+  - name: "SendGrid API Key"
+    type: "api_key"
+    regex: "SG\\.[A-Za-z0-9_\\-]{22}\\.[A-Za-z0-9_\\-]{43}"
+    description: "Detects SendGrid API keys"
+
+  # Bybit pattern removed — too generic, caused false positives on HTML/CSS output
+  # Re-add with a more specific pattern if needed
+
+  # --- Crypto Secrets ---
+  - name: "BIP39 Seed Phrase"
+    type: "seed_phrase"
+    regex: "\\b(abandon|ability|able|about|above|absent|absorb|abstract|absurd|abuse|access|accident|account|accuse|achieve|acid|acoustic|acquire|across|act|action|adapt|add|addict|address|adjust|admit|adult|advance|advice|aerobic|affair|afford|afraid|again|age|agent|agree|ahead|aim|air|airport|aisle|alarm|album|alcohol|alert|alien|all|alley|allow|almost|alone|alpha|already|also|always|amateur|amazing|among|amount|amused|analyst|anchor|ancient|anger|angle|angry|animal|ankle|announce|annual)(?:\\s+(?:abandon|ability|able|about|above|absent|absorb|abstract|absurd|abuse|access|accident|account|accuse|achieve|acid|acoustic|acquire|across|act|action|adapt|add|addict|address|adjust|admit|adult|advance|advice|aerobic|affair|afford|afraid|again|age|agent|agree|ahead|aim|air|airport|aisle|alarm|album|alcohol|alert|alien|all|alley|allow|almost|alone|alpha|already|also|always|amateur|amazing|among|amount|amused|analyst|anchor|ancient|anger|angle|angry|animal|ankle|announce|annual)){11,23}\\b"
+    description: "Detects BIP39 mnemonic seed phrases (12-24 words)"
+
+  - name: "Ethereum Private Key"
+    type: "private_key"
+    regex: "0x[0-9a-fA-F]{64}"
+    description: "Detects Ethereum-style private keys"
+
+  - name: "Bitcoin WIF Key"
+    type: "private_key"
+    regex: "5[HJK][1-9A-HJ-NP-Za-km-z]{49}"
+    description: "Detects Bitcoin WIF format private keys"
+
+  # --- Credentials ---
+  - name: "Password Assignment"
+    type: "password"
+    regex: "(?i)(?:password|passwd|pwd)\\s*[:=]\\s*['\"]?\\S{6,}"
+    description: "Detects password assignments in text"
+
+  - name: "Connection String"
+    type: "password"
+    regex: "(?i)(?:mysql|postgres|mongodb|redis)://[^\\s]{10,}"
+    description: "Detects database connection strings with credentials"
+
+  # --- Financial ---
+  - name: "Credit Card Visa"
+    type: "credit_card"
+    regex: "\\b4[0-9]{3}[\\s-]?[0-9]{4}[\\s-]?[0-9]{4}[\\s-]?[0-9]{4}\\b"
+    description: "Detects Visa card number patterns"
+
+  - name: "Credit Card Mastercard"
+    type: "credit_card"
+    regex: "\\b5[1-5][0-9]{2}[\\s-]?[0-9]{4}[\\s-]?[0-9]{4}[\\s-]?[0-9]{4}\\b"
+    description: "Detects Mastercard number patterns"
+
+  # --- Personal Data ---
+  - name: "Email and Password Combo"
+    type: "password"
+    regex: "[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}\\s*[:;|/]\\s*\\S{6,}"
+    description: "Detects email:password combinations"
+
+  - name: "SSH Private Key Header"
+    type: "private_key"
+    regex: "-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"
+    description: "Detects SSH/PGP private key headers"
+
+# ============================================================
+# Custom patterns: Add your own below
+# ============================================================
+# custom_patterns:
+#   - name: "My Custom Secret"
+#     type: "custom"
+#     regex: "my-secret-prefix-[A-Za-z0-9]+"
+#     description: "Custom pattern for my service"

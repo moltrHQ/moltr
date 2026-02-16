@@ -1,0 +1,61 @@
+# =============================================================================
+# Moltr - Domain Allowlist
+# =============================================================================
+# Only these domains may be contacted by the AI agent.
+# All other outbound requests will be blocked.
+#
+# Supports wildcards: *.example.com allows all subdomains of example.com
+# Direct IP access is always blocked (no allowlist bypass via IP).
+
+# -------------------------------------------------------------------------
+# Allowed domains
+# -------------------------------------------------------------------------
+allowed_domains:
+  # Trading API
+  - "api-testnet.bybit.com"
+
+  # LLM / AI APIs
+  - "openrouter.ai"
+  - "*.openrouter.ai"
+  - "api.openai.com"
+  - "api.groq.com"
+  - "api.anthropic.com"
+
+  # Telegram
+  - "api.telegram.org"
+
+  # Supabase
+  - "*.supabase.co"
+
+  # Python packages
+  - "pypi.org"
+  - "files.pythonhosted.org"
+
+  # Code repositories
+  - "github.com"
+  - "*.github.com"
+  - "raw.githubusercontent.com"
+
+  # Node packages
+  - "registry.npmjs.org"
+
+  # Local services
+  - "localhost"
+  - "127.0.0.1"
+
+# -------------------------------------------------------------------------
+# Explicitly blocked domains (override any allowlist match)
+# -------------------------------------------------------------------------
+blocked_domains:
+  # Cloud metadata endpoints (SSRF targets)
+  - "169.254.169.254"
+  - "metadata.google.internal"
+
+  # Data exfiltration services
+  - "pastebin.com"
+  - "transfer.sh"
+  - "ngrok.io"
+  - "*.ngrok.io"
+  - "webhook.site"
+  - "requestbin.com"
+  - "hookbin.com"
