@@ -5,7 +5,7 @@
 ### Step 1: Clone
 
 ```bash
-git clone https://github.com/YOUR_ACCOUNT/moltr-security.git
+git clone https://github.com/moltrHQ/moltr-security.git
 cd moltr-security
 ```
 
