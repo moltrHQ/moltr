@@ -8,6 +8,7 @@ and stored in a JSON file for later comparison.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -19,6 +20,9 @@ class SecretsRegistry:
 
     Secrets are encrypted at rest and only decrypted in memory
     when checking text for leaks.
+
+    The Fernet key is loaded from MOLTR_FERNET_KEY env variable.
+    If not set, falls back to key in storage file (legacy).
     """
 
     def __init__(self, storage_path: str = "secrets.json") -> None:
@@ -37,7 +41,9 @@ class SecretsRegistry:
         if self._storage_path.exists():
             self._load()
         else:
-            self._key = Fernet.generate_key()
+            # Prefer key from ENV, generate new one only as last resort
+            env_key = os.environ.get("MOLTR_FERNET_KEY", "")
+            self._key = env_key.encode("utf-8") if env_key else Fernet.generate_key()
             self._fernet = Fernet(self._key)
 
     def add_secret(self, name: str, value: str) -> None:
@@ -86,20 +92,35 @@ class SecretsRegistry:
         return values
 
     def _save(self) -> None:
-        """Persist the encrypted secrets and key to disk."""
-        data = {
-            "key": self._key.decode("utf-8"),
+        """Persist the encrypted secrets to disk.
+
+        Key is stored ONLY if MOLTR_FERNET_KEY env is not set (legacy mode).
+        When env is set, the key is NOT written to disk.
+        """
+        data: dict = {
             "secrets": {
                 name: enc.decode("utf-8") for name, enc in self._secrets.items()
             },
         }
+        # Only store key in file if not using ENV (legacy compat)
+        if not os.environ.get("MOLTR_FERNET_KEY"):
+            data["key"] = self._key.decode("utf-8")
         self._storage_path.write_text(json.dumps(data), encoding="utf-8")
 
     def _load(self) -> None:
-        """Load encrypted secrets and key from disk."""
+        """Load encrypted secrets from disk. Key from ENV or file."""
         raw = self._storage_path.read_text(encoding="utf-8")
         data = json.loads(raw)
-        self._key = data["key"].encode("utf-8")
+
+        # Prefer key from ENV, fall back to file (legacy)
+        env_key = os.environ.get("MOLTR_FERNET_KEY", "")
+        if env_key:
+            self._key = env_key.encode("utf-8")
+        elif "key" in data:
+            self._key = data["key"].encode("utf-8")
+        else:
+            raise ValueError("No Fernet key found. Set MOLTR_FERNET_KEY env variable.")
+
         self._fernet = Fernet(self._key)
         self._secrets = {
             name: enc.encode("utf-8") for name, enc in data["secrets"].items()

@@ -1,0 +1,45 @@
+Erstelle ein Docker-Setup fuer Moltr Security als standalone Produkt.
+Nur der Security-Layer, NICHT der Telegram-Agent.
+
+1. Erstelle einen neuen Ordner: C:\Users\Administrator\moltr-security\
+
+2. Kopiere NUR die Security-relevanten Dateien rein:
+   - src/moltr-client.ts (Panic Patterns + Security API Client)
+   - Die Moltr Security API selbst (der Service auf Port 8420)
+   - skills-registry.yaml
+   - Beispiel domains.yaml (allowlist)
+   - Beispiel paths.yaml (erlaubte Pfade)
+
+3. Erstelle ein Dockerfile:
+   - Base: node:20-alpine
+   - Exponiert Port 8420
+   - Startet den Security-Service
+   - Healthcheck eingebaut
+
+4. Erstelle docker-compose.yml:
+   - Ein Service: moltr-security
+   - Volume-Mount fuer Config-Dateien (domains.yaml, paths.yaml)
+   - Environment Variables fuer Telegram Alert Token (optional)
+   - Restart: unless-stopped
+
+5. Erstelle eine INSTALL.md:
+   - 3 Schritte: Clone, Configure, Run
+   - Beispiel fuer OpenClaw Integration
+   - Beispiel fuer beliebigen Agent
+
+6. Erstelle eine saubere README.md:
+   - Headline: "Moltr Security — The Protective Shell for Your AI Agent"
+   - Das Terminal-Beispiel (Agent versucht Daten zu stehlen, Moltr blockt)
+   - Feature-Liste (6 Features von der Landing Page)
+   - Quick Start (docker compose up)
+   - Architecture Diagram (ASCII)
+   - License: AGPL-3.0
+   - Link zu moltr.tech
+   - KEIN Bezug zu Goda Go, OpenClaw-Code, oder anderen Projekten
+   - Alles 100% eigener Text
+
+7. LICENSE Datei: AGPL-3.0, Copyright Walter Troska 2026
+
+8. .gitignore fuer Node/Docker
+
+Alles muss sofort lauffaehig sein mit: docker compose up -d
