@@ -7,6 +7,7 @@ This is a PROTECTIVE tool that prevents AI agents from
 accidentally exposing sensitive data.
 """
 
+import os
 import re
 import base64
 import codecs
@@ -109,8 +110,8 @@ class OutputScanner:
         if not data:
             return
 
-        # Load passphrase
-        self._passphrase = str(data.get("passphrase", ""))
+        # Load passphrase: ENV takes priority, fallback to YAML (deprecated)
+        self._passphrase = os.environ.get("MOLTR_SCAN_PASSPHRASE", "") or str(data.get("passphrase", ""))
 
         # Load level configurations
         levels_cfg = data.get("levels", {})

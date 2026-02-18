@@ -14,11 +14,16 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from dotenv import load_dotenv
+from fastapi import FastAPI, Request, Response
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 # Ensure project root is on sys.path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+
+# Load .env from project root (needed on Windows where PM2 env injection is unreliable)
+load_dotenv(PROJECT_ROOT / ".env")
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
@@ -109,6 +114,37 @@ app = FastAPI(
     description="Security proxy for AI agent actions",
     version="0.1.0",
 )
+
+# --------------- API Key Authentication ---------------
+
+MOLTR_API_KEY = os.environ.get("MOLTR_API_KEY", "")
+
+# Endpoints that don't require authentication
+PUBLIC_PATHS = {"/health", "/docs", "/openapi.json"}
+
+
+@app.middleware("http")
+async def api_key_auth(request: Request, call_next):
+    """Require API key for all endpoints except health/docs."""
+    if not MOLTR_API_KEY:
+        # No key configured → allow all (backwards compatible)
+        return await call_next(request)
+
+    if request.url.path in PUBLIC_PATHS:
+        return await call_next(request)
+
+    # Accept key via header or query param
+    key = request.headers.get("X-API-Key") or request.query_params.get("api_key")
+    if not key:
+        auth = request.headers.get("Authorization", "")
+        if auth.startswith("Bearer "):
+            key = auth[7:]
+
+    if key != MOLTR_API_KEY:
+        logger.warning("AUTH DENIED from %s for %s", request.client.host if request.client else "unknown", request.url.path)
+        return JSONResponse(status_code=401, content={"detail": "Invalid or missing API key"})
+
+    return await call_next(request)
 
 # --------------- Request/Response Models ---------------
 

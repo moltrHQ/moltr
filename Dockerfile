@@ -12,7 +12,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application
 COPY src/ src/
 COPY config/ config/
-COPY honeypots/ honeypots/
+# NOTE: honeypots/ are NOT baked into the image.
+# Mount them at runtime: docker run -v ./honeypots:/app/honeypots moltr
 
 # Create logs directory
 RUN mkdir -p logs
