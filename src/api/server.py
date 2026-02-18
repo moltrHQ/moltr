@@ -129,6 +129,8 @@ class PathCheckRequest(BaseModel):
 
 class OutputScanRequest(BaseModel):
     text: str
+    level: str = "high"
+    passphrase: str = ""
 
 
 class MoltrResponse(BaseModel):
@@ -232,11 +234,12 @@ async def check_path(req: PathCheckRequest, request: Request):
 
 @app.post("/scan/output", response_model=MoltrResponse)
 async def scan_output(req: OutputScanRequest, request: Request):
-    result = moltr.scan_output(req.text)
+    result = moltr.scan_output(req.text, level=req.level, passphrase=req.passphrase)
     blocked = result.blocked
     logger.info(
-        "%s OUTPUT scan (%s)",
+        "%s OUTPUT scan [%s] (%s)",
         "BLOCK" if blocked else "ALLOW",
+        req.level,
         result.threat_type if blocked else "clean",
     )
     if blocked:

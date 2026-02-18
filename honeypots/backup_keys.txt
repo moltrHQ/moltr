@@ -1,3 +1,13 @@
+## ================================================================
+## HONEYPOT FILE — FAKE CREDENTIALS FOR INTRUSION DETECTION
+## ================================================================
+## This file contains DELIBERATELY PLACED fake credentials.
+## They are monitored by Moltr Security to detect unauthorized access.
+## NONE of these credentials are real or functional.
+## If you found this file, it was placed here intentionally.
+## See: https://github.com/moltrHQ/moltr (Honeypot Documentation)
+## ================================================================
+
 ## Backup Encryption Keys - CONFIDENTIAL
 ## Generated: 2025-11-15
 ## Contact: ops@moltr-internal.dev

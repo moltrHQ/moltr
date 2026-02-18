@@ -14,11 +14,41 @@
 # ============================================================
 
 # -------------------------------------------------------------------------
-# Lockdown — auto-lockdown after repeated leak detections
+# Security Levels — different scan profiles for different use cases
 # -------------------------------------------------------------------------
-lockdown:
-  max_incidents: 1       # Sofort-Lockdown nach dem ersten Leak
-  window_seconds: 600    # Zeitfenster in Sekunden (600 = 10 Minuten)
+# high:   All patterns active (default, main bot)
+# medium: API keys + crypto + financial, but credentials allowed (marketing bot)
+# low:    Only crypto + financial (admin mode, passphrase required)
+#
+# passphrase: Required to use medium or low level. Without it, always high.
+# -------------------------------------------------------------------------
+passphrase: "moltr-7xK9pL2m"
+
+levels:
+  high:
+    lockdown_after: 1
+    window_seconds: 600
+    blocked_types:
+      - api_key
+      - seed_phrase
+      - private_key
+      - password
+      - credit_card
+  medium:
+    lockdown_after: 2
+    window_seconds: 600
+    blocked_types:
+      - api_key
+      - seed_phrase
+      - private_key
+      - credit_card
+  low:
+    lockdown_after: 3
+    window_seconds: 600
+    blocked_types:
+      - seed_phrase
+      - private_key
+      - credit_card
 
 patterns:
   # --- API Keys and Tokens ---

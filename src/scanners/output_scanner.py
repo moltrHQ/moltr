@@ -36,22 +36,32 @@ class ScanResult:
 class LockdownState:
     """Tracks incidents for auto-lockdown."""
     incidents: list = field(default_factory=list)
-    locked: bool = False
-    max_incidents: int = 3
     window_seconds: int = 600  # 10 minutes
 
-    def record_incident(self) -> bool:
-        """Record an incident. Returns True if lockdown triggered."""
+    def record_incident(self) -> None:
+        """Record an incident timestamp."""
+        self.incidents.append(time.time())
+
+    def is_locked(self, threshold: int) -> bool:
+        """Check if locked for a given threshold (incidents in window >= threshold)."""
         now = time.time()
-        self.incidents.append(now)
-        # Remove old incidents outside window
         self.incidents = [
             t for t in self.incidents
             if now - t <= self.window_seconds
         ]
-        if len(self.incidents) >= self.max_incidents:
-            self.locked = True
-        return self.locked
+        return len(self.incidents) >= threshold
+
+    def clear(self) -> None:
+        """Clear all incidents."""
+        self.incidents.clear()
+
+
+@dataclass
+class LevelConfig:
+    """Configuration for a security level."""
+    lockdown_after: int = 1
+    window_seconds: int = 600
+    blocked_types: list = field(default_factory=list)
 
 
 class OutputScanner:
@@ -74,12 +84,24 @@ class OutputScanner:
         self._patterns: list[dict] = []
         self._secrets_registry = secrets_registry
         self._lockdown = LockdownState()
+        self._passphrase: str = ""
+        self._levels: dict[str, LevelConfig] = {
+            "high": LevelConfig(lockdown_after=1, blocked_types=[
+                "api_key", "seed_phrase", "private_key", "password", "credit_card",
+            ]),
+            "medium": LevelConfig(lockdown_after=2, blocked_types=[
+                "api_key", "seed_phrase", "private_key", "credit_card",
+            ]),
+            "low": LevelConfig(lockdown_after=3, blocked_types=[
+                "seed_phrase", "private_key", "credit_card",
+            ]),
+        }
 
         if patterns_file and patterns_file.exists():
             self._load_patterns(patterns_file)
 
     def _load_patterns(self, path: Path) -> None:
-        """Load scan patterns and lockdown settings from YAML config."""
+        """Load scan patterns, levels, and passphrase from YAML config."""
         if yaml is None:
             return
         raw = path.read_text(encoding="utf-8")
@@ -87,13 +109,17 @@ class OutputScanner:
         if not data:
             return
 
-        # Load lockdown settings if present
-        lockdown_cfg = data.get("lockdown", {})
-        if lockdown_cfg:
-            if "max_incidents" in lockdown_cfg:
-                self._lockdown.max_incidents = int(lockdown_cfg["max_incidents"])
-            if "window_seconds" in lockdown_cfg:
-                self._lockdown.window_seconds = int(lockdown_cfg["window_seconds"])
+        # Load passphrase
+        self._passphrase = str(data.get("passphrase", ""))
+
+        # Load level configurations
+        levels_cfg = data.get("levels", {})
+        for level_name, cfg in levels_cfg.items():
+            self._levels[level_name] = LevelConfig(
+                lockdown_after=int(cfg.get("lockdown_after", 1)),
+                window_seconds=int(cfg.get("window_seconds", 600)),
+                blocked_types=list(cfg.get("blocked_types", [])),
+            )
 
         if "patterns" in data:
             for p in data["patterns"]:
@@ -108,29 +134,52 @@ class OutputScanner:
                 except re.error:
                     continue
 
+    def _resolve_level(self, level: str, passphrase: str) -> str:
+        """Resolve the effective security level. Requires passphrase for non-high."""
+        if level == "high":
+            return "high"
+        if not self._passphrase or passphrase != self._passphrase:
+            return "high"  # Wrong or missing passphrase → forced high
+        if level in self._levels:
+            return level
+        return "high"
+
     @property
     def is_locked(self) -> bool:
-        """Check if auto-lockdown is active."""
-        return self._lockdown.locked
+        """Check if auto-lockdown is active (for high level, strictest)."""
+        high_cfg = self._levels.get("high", LevelConfig())
+        return self._lockdown.is_locked(high_cfg.lockdown_after)
 
-    def scan(self, text: str) -> ScanResult:
+    def scan(self, text: str, level: str = "high", passphrase: str = "") -> ScanResult:
         """
         Scan text for sensitive data leaks.
-        
+
         Checks the original text AND deobfuscated versions
         (base64, hex, rot13, url-encoded).
-        
+
+        Args:
+            text: The text to scan.
+            level: Security level (high/medium/low).
+            passphrase: Required for medium/low levels.
+
         Returns ScanResult with blocked=True if threat found.
         """
-        if self._lockdown.locked:
+        effective_level = self._resolve_level(level, passphrase)
+        level_cfg = self._levels.get(effective_level, LevelConfig())
+
+        # Update lockdown window from level config
+        self._lockdown.window_seconds = level_cfg.window_seconds
+
+        # Check lockdown based on this level's threshold
+        if self._lockdown.is_locked(level_cfg.lockdown_after):
             return ScanResult(
                 blocked=True,
                 threat_type="LOCKDOWN",
-                matched_pattern="System is in lockdown mode",
+                matched_pattern=f"System is in lockdown mode (level={effective_level})",
                 original_text=text[:100],
             )
 
-        # Check against secrets registry first
+        # Check against secrets registry first (always, regardless of level)
         if self._secrets_registry:
             if self._secrets_registry.check_text(text):
                 self._lockdown.record_incident()
@@ -141,15 +190,18 @@ class OutputScanner:
                     original_text=text[:100],
                 )
 
+        # Filter patterns by level's blocked types
+        blocked_types = set(level_cfg.blocked_types)
+
         # Check original text
-        result = self._check_patterns(text, "plaintext")
+        result = self._check_patterns(text, "plaintext", blocked_types)
         if result.blocked:
             self._lockdown.record_incident()
             return result
 
         # Check deobfuscated versions
         for method, decoded in self._deobfuscate(text):
-            result = self._check_patterns(decoded, method)
+            result = self._check_patterns(decoded, method, blocked_types)
             if result.blocked:
                 result.deobfuscation_method = method
                 self._lockdown.record_incident()
@@ -157,9 +209,12 @@ class OutputScanner:
 
         return ScanResult(blocked=False)
 
-    def _check_patterns(self, text: str, method: str) -> ScanResult:
-        """Check text against all loaded patterns."""
+    def _check_patterns(self, text: str, method: str, blocked_types: set = None) -> ScanResult:
+        """Check text against loaded patterns, filtered by blocked types."""
         for pattern in self._patterns:
+            # Skip patterns whose type is not in the blocked set for this level
+            if blocked_types and pattern["type"] not in blocked_types:
+                continue
             match = pattern["regex"].search(text)
             if match:
                 return ScanResult(
@@ -244,5 +299,4 @@ class OutputScanner:
 
     def reset_lockdown(self) -> None:
         """Reset lockdown state. Requires manual intervention."""
-        self._lockdown.locked = False
-        self._lockdown.incidents.clear()
+        self._lockdown.clear()
