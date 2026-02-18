@@ -15,6 +15,9 @@ venv/
 
 # Secrets
 secrets.json
+newgit.txt
+*.token
+*.key
 
 # Logs
 logs/*.log

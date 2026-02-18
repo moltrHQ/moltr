@@ -31,6 +31,16 @@ Moltr Security is a **real-time security proxy** that sits between your AI agent
   (Fake response - the agent never knows it was caught)
 ```
 
+## Choose Your Setup
+
+| Your Setup | Guide |
+|------------|-------|
+| **Claude Pro / Max** | You're here — scroll down to [Quick Start](#quick-start) |
+| **OpenClaw** (Pico / Nano / Full) | [moltrHQ/moltr-openclaw](https://github.com/moltrHQ/moltr-openclaw) — tailored guide, zero conflicts with your Gateway |
+| **Custom Agent** (Python, Node, Go, etc.) | You're here — see [API Endpoints](#api-endpoints) and [Integration Examples](#integrate-with-any-agent) |
+
+Moltr is **LLM-agnostic**. It works with any AI model provider — Anthropic API, OpenRouter, AWS Bedrock, self-hosted models. Moltr checks what your agent **does**, not how it connects to the model.
+
 ## Why Moltr?
 
 AI agents can execute code, access files, and make network requests. Most frameworks trust the model to behave. **Moltr doesn't.**

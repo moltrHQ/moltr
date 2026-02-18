@@ -72,16 +72,18 @@ class Moltr:
     # Central API
     # -----------------------------------------------------------------
 
-    def scan_output(self, text: str) -> ScanResult:
+    def scan_output(self, text: str, level: str = "high", passphrase: str = "") -> ScanResult:
         """Scan agent output text for sensitive data leaks.
 
         Args:
             text: The output text to scan.
+            level: Security level (high/medium/low).
+            passphrase: Required for medium/low levels.
 
         Returns:
             ScanResult indicating whether the text was blocked.
         """
-        return self._output_scanner.scan(text)
+        return self._output_scanner.scan(text, level=level, passphrase=passphrase)
 
     def validate_command(self, command: str) -> ValidationResult:
         """Validate a shell command against the security policy.
