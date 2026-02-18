@@ -20,9 +20,9 @@
 # medium: API keys + crypto + financial, but credentials allowed (marketing bot)
 # low:    Only crypto + financial (admin mode, passphrase required)
 #
-# passphrase: Required to use medium or low level. Without it, always high.
+# passphrase: Set via MOLTR_SCAN_PASSPHRASE env variable.
+#             Required to use medium or low level. Without it, always high.
 # -------------------------------------------------------------------------
-passphrase: "moltr-7xK9pL2m"
 
 levels:
   high:
