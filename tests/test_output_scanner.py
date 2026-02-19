@@ -369,10 +369,18 @@ class TestRateLimitingAndLockdown:
         assert scanner.is_locked is True
 
     def test_no_lockdown_below_threshold(self, scanner: OutputScanner) -> None:
-        """Fewer than 3 detections should not trigger lockdown."""
-        scanner.scan(f"A: {_make_openai_style_key()}")
-        scanner.scan(f"B: {_make_aws_style_key()}")
-        assert scanner.is_locked is False
+        """Fewer than 3 detections on low level should not trigger lockdown.
+
+        Note: high level has lockdown_after=1 so ANY detection locks.
+        Low level has lockdown_after=3, so 2 detections should not lock.
+        We use level='low' + passphrase to test the threshold properly.
+        """
+        scanner._passphrase = "test"
+        scanner.scan(f"A: {_make_openai_style_key()}", level="low", passphrase="test")
+        scanner.scan(f"B: {_make_aws_style_key()}", level="low", passphrase="test")
+        # Low level threshold is 3, so 2 incidents should not lock
+        # is_locked checks against high level (threshold=1) so we check lockdown directly
+        assert scanner._lockdown.is_locked(3) is False
 
     def test_lockdown_blocks_all_output(self, scanner: OutputScanner) -> None:
         """Once locked down, even clean text should be blocked."""
@@ -408,24 +416,23 @@ class TestLockdownState:
     def test_initial_state(self) -> None:
         """Fresh LockdownState should not be locked."""
         state = LockdownState()
-        assert state.locked is False
+        assert state.is_locked(threshold=3) is False
         assert state.incidents == []
 
     def test_record_below_threshold(self) -> None:
-        """Recording fewer incidents than max should not lock."""
-        state = LockdownState(max_incidents=3)
+        """Recording fewer incidents than threshold should not lock."""
+        state = LockdownState()
         state.record_incident()
         state.record_incident()
-        assert state.locked is False
+        assert state.is_locked(threshold=3) is False
 
     def test_record_at_threshold_locks(self) -> None:
-        """Recording max_incidents should trigger lockdown."""
-        state = LockdownState(max_incidents=3)
+        """Recording incidents equal to threshold should trigger lockdown."""
+        state = LockdownState()
         state.record_incident()
         state.record_incident()
-        result = state.record_incident()
-        assert result is True
-        assert state.locked is True
+        state.record_incident()
+        assert state.is_locked(threshold=3) is True
 
 
 # -------------------------------------------------------------------------

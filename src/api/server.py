@@ -16,8 +16,12 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, Response
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 # Ensure project root is on sys.path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -28,6 +32,11 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.moltr import Moltr
+from src.killswitches.killswitch import EscalationLevel
+from src.auth.router import auth_router
+from src.auth.session_store import session_store
+from src.api.dashboard_router import dashboard_router, set_moltr
+from src.api.honeypot_router import honeypot_router, set_moltr_for_honeypots
 
 # --------------- Logging ---------------
 
@@ -105,22 +114,57 @@ moltr = Moltr(
     project_root=str(PROJECT_ROOT),
 )
 
+# Set KillSwitch codephrase from environment (required for reset)
+KILLSWITCH_CODEPHRASE = os.environ.get("MOLTR_KILLSWITCH_CODEPHRASE", "")
+if KILLSWITCH_CODEPHRASE:
+    moltr._killswitch._codephrase = KILLSWITCH_CODEPHRASE
+    logger.info("KillSwitch codephrase loaded from environment")
+else:
+    logger.warning("MOLTR_KILLSWITCH_CODEPHRASE not set — KillSwitch reset will accept empty codephrase")
+
 logger.info("Moltr security modules initialized")
 
+# Wire moltr instance into dashboard and honeypot routers
+set_moltr(moltr)
+set_moltr_for_honeypots(moltr)
+
 # --------------- FastAPI App ---------------
+
+# --------------- Rate Limiting ---------------
+
+limiter = Limiter(key_func=get_remote_address)
 
 app = FastAPI(
     title="Moltr Security API",
     description="Security proxy for AI agent actions",
-    version="0.1.0",
+    version="0.2.0",
 )
+app.state.limiter = limiter
+
+# Register routers
+app.include_router(auth_router)
+app.include_router(dashboard_router)
+app.include_router(honeypot_router)
+
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    logger.warning("RATE LIMIT from %s on %s", request.client.host if request.client else "unknown", request.url.path)
+    return JSONResponse(
+        status_code=429,
+        content={"detail": "Rate limit exceeded. Try again later.", "retry_after": str(exc.detail)},
+    )
 
 # --------------- API Key Authentication ---------------
 
 MOLTR_API_KEY = os.environ.get("MOLTR_API_KEY", "")
 
-# Endpoints that don't require authentication
-PUBLIC_PATHS = {"/health", "/docs", "/openapi.json"}
+# Endpoints that don't require API key authentication
+PUBLIC_PATHS = {
+    "/health", "/docs", "/openapi.json",
+    "/api/v1/auth/login",
+    "/api/v1/auth/refresh",
+}
 
 
 @app.middleware("http")
@@ -131,6 +175,22 @@ async def api_key_auth(request: Request, call_next):
         return await call_next(request)
 
     if request.url.path in PUBLIC_PATHS:
+        return await call_next(request)
+
+    # Dashboard SPA + static assets are public (auth handled by JWT in dashboard)
+    if request.url.path.startswith("/dashboard"):
+        return await call_next(request)
+
+    # Dashboard API endpoints use JWT auth (not X-API-Key)
+    if request.url.path.startswith("/api/v1/dashboard"):
+        return await call_next(request)
+
+    # Honeypot traps + manifest are intentionally public (attacker bait)
+    if request.url.path.startswith("/internal/") or \
+       request.url.path.startswith("/admin/backup") or \
+       request.url.path.startswith("/v1/secrets") or \
+       request.url.path.startswith("/config/database") or \
+       request.url.path.startswith("/honeypots/manifest"):
         return await call_next(request)
 
     # Accept key via header or query param
@@ -150,26 +210,31 @@ async def api_key_auth(request: Request, call_next):
 
 
 class UrlCheckRequest(BaseModel):
+    """Check an outbound URL against the network firewall."""
     url: str
     payload: str = ""
 
 
 class CommandCheckRequest(BaseModel):
+    """Validate a shell command against the security policy."""
     command: str
 
 
 class PathCheckRequest(BaseModel):
+    """Check a filesystem path against the access policy."""
     path: str
     operation: str = "read"
 
 
 class OutputScanRequest(BaseModel):
+    """Scan AI agent output for secret leaks."""
     text: str
     level: str = "high"
     passphrase: str = ""
 
 
 class MoltrResponse(BaseModel):
+    """Standard response for security check endpoints."""
     allowed: bool
     reason: str = ""
     details: dict = {}
@@ -179,16 +244,19 @@ class MoltrResponse(BaseModel):
 
 
 @app.get("/health")
-async def health():
+@limiter.limit("60/minute")
+async def health(request: Request):
     return {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
 
 
 @app.get("/status")
-async def status():
+@limiter.limit("30/minute")
+async def status(request: Request):
     return moltr.get_status()
 
 
 @app.post("/check/url", response_model=MoltrResponse)
+@limiter.limit("120/minute")
 async def check_url(req: UrlCheckRequest, request: Request):
     result = moltr.check_url(req.url, req.payload)
     allowed = result.allowed
@@ -216,6 +284,7 @@ async def check_url(req: UrlCheckRequest, request: Request):
 
 
 @app.post("/check/command", response_model=MoltrResponse)
+@limiter.limit("120/minute")
 async def check_command(req: CommandCheckRequest, request: Request):
     result = moltr.validate_command(req.command)
     allowed = result.allowed
@@ -241,6 +310,7 @@ async def check_command(req: CommandCheckRequest, request: Request):
 
 
 @app.post("/check/path", response_model=MoltrResponse)
+@limiter.limit("120/minute")
 async def check_path(req: PathCheckRequest, request: Request):
     result = moltr.check_path(req.path, req.operation)
     blocked = result.blocked
@@ -269,6 +339,7 @@ async def check_path(req: PathCheckRequest, request: Request):
 
 
 @app.post("/scan/output", response_model=MoltrResponse)
+@limiter.limit("60/minute")
 async def scan_output(req: OutputScanRequest, request: Request):
     result = moltr.scan_output(req.text, level=req.level, passphrase=req.passphrase)
     blocked = result.blocked
@@ -293,3 +364,205 @@ async def scan_output(req: OutputScanRequest, request: Request):
             "deobfuscation_method": result.deobfuscation_method,
         },
     )
+
+
+# --------------- KillSwitch Endpoints ---------------
+
+VALID_LEVELS = {lvl.name.lower(): lvl for lvl in EscalationLevel}
+
+
+class KillSwitchTriggerRequest(BaseModel):
+    """Trigger a kill switch escalation level."""
+    level: str  # pause, network_cut, lockdown, wipe, emergency
+    reason: str = ""
+
+
+class KillSwitchResetRequest(BaseModel):
+    """Reset a kill switch level (requires codephrase)."""
+    level: str
+    codephrase: str
+
+
+@app.post("/killswitch/trigger")
+@limiter.limit("3/minute")
+async def killswitch_trigger(req: KillSwitchTriggerRequest, request: Request):
+    level_name = req.level.lower()
+    if level_name not in VALID_LEVELS:
+        return JSONResponse(status_code=400, content={
+            "detail": f"Invalid level. Valid: {', '.join(VALID_LEVELS.keys())}",
+        })
+
+    level = VALID_LEVELS[level_name]
+
+    # Safety: WIPE and EMERGENCY require "CONFIRM:" prefix in reason
+    if level >= EscalationLevel.WIPE and not req.reason.upper().startswith("CONFIRM:"):
+        return JSONResponse(status_code=400, content={
+            "detail": f"Level {level.name} requires reason to start with 'CONFIRM: ' as safety check.",
+        })
+
+    # Idempotency: check if level is already active
+    already_active = level in moltr._killswitch.get_status().active_levels
+
+    moltr._killswitch.trigger(level, reason=req.reason)
+    source_ip = request.client.host if request.client else "unknown"
+    logger.critical("KILLSWITCH TRIGGERED: Level %s — %s (IP: %s)%s",
+                    level.name, req.reason, source_ip,
+                    " [already active]" if already_active else "")
+
+    # LOCKDOWN+ invalidates all active dashboard sessions
+    if level >= EscalationLevel.LOCKDOWN:
+        killed = session_store.invalidate_all()
+        if killed:
+            logger.critical("KILLSWITCH SESSION-KILL: %d dashboard sessions invalidated", killed)
+
+    log_incident(request, "killswitch_trigger", f"Level {level.name}: {req.reason}", {
+        "level": level.name,
+        "level_value": level.value,
+        "source_ip": source_ip,
+        "already_active": already_active,
+    })
+
+    return {
+        "triggered": True,
+        "already_active": already_active,
+        "level": level.name,
+        "reason": req.reason,
+        "status": _format_killswitch_status(),
+    }
+
+
+@app.post("/killswitch/reset")
+@limiter.limit("5/minute")
+async def killswitch_reset(req: KillSwitchResetRequest, request: Request):
+    level_name = req.level.lower()
+    if level_name not in VALID_LEVELS:
+        return JSONResponse(status_code=400, content={
+            "detail": f"Invalid level. Valid: {', '.join(VALID_LEVELS.keys())}",
+        })
+
+    level = VALID_LEVELS[level_name]
+    success = moltr._killswitch.reset(level, codephrase=req.codephrase)
+
+    source_ip = request.client.host if request.client else "unknown"
+
+    if not success:
+        logger.warning("KILLSWITCH RESET DENIED: Level %s — wrong codephrase (IP: %s)",
+                       level.name, source_ip)
+        log_incident(request, "killswitch_reset_denied", f"Level {level.name}: wrong codephrase", {
+            "level": level.name,
+            "source_ip": source_ip,
+        })
+        return JSONResponse(status_code=403, content={
+            "detail": "Invalid codephrase. Reset denied.",
+        })
+
+    logger.info("KILLSWITCH RESET: Level %s (IP: %s)", level.name, source_ip)
+
+    return {
+        "reset": True,
+        "level": level.name,
+        "status": _format_killswitch_status(),
+    }
+
+
+@app.get("/killswitch/log")
+@limiter.limit("30/minute")
+async def killswitch_log(request: Request, limit: int = 50, offset: int = 0):
+    all_events = moltr.get_killswitch_log()
+    total = len(all_events)
+    events = all_events[offset:offset + limit]
+    return {
+        "events": [
+            {
+                "timestamp": e.timestamp,
+                "action": e.action,
+                "level": e.level.name,
+                "reason": e.reason,
+            }
+            for e in events
+        ],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "status": _format_killswitch_status(),
+    }
+
+
+# --------------- Integrity Watchdog Endpoints ---------------
+
+
+@app.get("/integrity/check")
+@limiter.limit("10/minute")
+async def integrity_check(request: Request):
+    """Run an integrity verification and return violations."""
+    violations = moltr.verify_integrity()
+    return {
+        "violations": [v.to_dict() for v in violations],
+        "violations_count": len(violations),
+        "clean": len(violations) == 0,
+    }
+
+
+@app.get("/integrity/report")
+@limiter.limit("30/minute")
+async def integrity_report(request: Request):
+    """Return the full integrity watchdog report."""
+    return moltr.get_integrity_report()
+
+
+# --------------- Helper Functions ---------------
+
+
+def _format_killswitch_status() -> dict:
+    """Format the current killswitch status for API responses."""
+    ks = moltr._killswitch.get_status()
+    return {
+        "is_locked_down": ks.is_locked_down,
+        "active_levels": [lvl.name for lvl in ks.active_levels],
+        "highest_level": ks.highest_level.name if ks.highest_level else None,
+    }
+
+
+# --------------- CSP Middleware ---------------
+
+_CSP = (
+    "default-src 'self'; "
+    "script-src 'self'; "
+    "style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data:; "
+    "font-src 'self'; "
+    "connect-src 'self'; "
+    "frame-ancestors 'none';"
+)
+
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    """Add security headers to all responses."""
+    response = await call_next(request)
+    response.headers["Content-Security-Policy"] = _CSP
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    return response
+
+
+# --------------- Dashboard Static Files ---------------
+
+STATIC_DIR = PROJECT_ROOT / "static"
+
+if STATIC_DIR.exists():
+    # Serve built React SPA under /dashboard/
+    app.mount("/dashboard", StaticFiles(directory=STATIC_DIR, html=True), name="dashboard")
+    logger.info("Dashboard static files mounted at /dashboard/")
+else:
+    logger.warning("Dashboard static dir not found (%s) — run: cd dashboard && npm run build", STATIC_DIR)
+
+
+# SPA fallback: any /dashboard/* URL that doesn't match a file serves index.html
+@app.get("/dashboard/{full_path:path}", include_in_schema=False)
+async def spa_fallback(full_path: str):
+    index = STATIC_DIR / "index.html"
+    if index.exists():
+        return FileResponse(index)
+    return JSONResponse(status_code=503, content={"detail": "Dashboard not built. Run: cd dashboard && npm run build"})

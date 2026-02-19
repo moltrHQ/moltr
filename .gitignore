@@ -19,6 +19,9 @@ newgit.txt
 *.token
 *.key
 
+# Honeypots (runtime-generated, never committed)
+honeypots/
+
 # Logs
 logs/*.log
 logs/*.jsonl
