@@ -181,3 +181,80 @@ class TestDashboardIntegrity:
         assert res.status_code == 200
         data = res.json()
         assert "killswitch" in data
+
+
+# ── MIM — Moltr Interop Manifest ───────────────────────────────────────────────
+
+class TestMIMManifest:
+    """Tests for the Moltr Interop Manifest (MIM) v1.0 endpoint."""
+
+    def test_mim_endpoint_accessible_without_api_key(self, client):
+        """MIM endpoint must be public — no API key required."""
+        res = client.get("/.well-known/moltr-manifest.json")
+        assert res.status_code == 200
+
+    def test_mim_content_type_is_json(self, client):
+        res = client.get("/.well-known/moltr-manifest.json")
+        assert "application/json" in res.headers.get("content-type", "")
+
+    def test_mim_version_field(self, client):
+        data = client.get("/.well-known/moltr-manifest.json").json()
+        assert data["mim"] == "1.0"
+
+    def test_mim_vendor_field(self, client):
+        data = client.get("/.well-known/moltr-manifest.json").json()
+        assert data["vendor"] == "moltr-security"
+
+    def test_mim_has_honeypots_section(self, client):
+        data = client.get("/.well-known/moltr-manifest.json").json()
+        assert "honeypots" in data
+        hp = data["honeypots"]
+        assert "files" in hp
+        assert "endpoints" in hp
+        assert "directories" in hp
+
+    def test_mim_api_traps_declared(self, client):
+        data = client.get("/.well-known/moltr-manifest.json").json()
+        endpoints = data["honeypots"]["endpoints"]
+        assert "/internal/credentials" in endpoints
+        assert "/admin/backup-keys" in endpoints
+        assert "/internal/keys" in endpoints
+        assert "/v1/secrets" in endpoints
+        assert "/config/database" in endpoints
+
+    def test_mim_has_scanner_hints(self, client):
+        data = client.get("/.well-known/moltr-manifest.json").json()
+        assert "scanner_hints" in data
+        hints = data["scanner_hints"]
+        assert "ignore_patterns" in hints
+        assert "false_positive_notice" in hints
+        assert len(hints["false_positive_notice"]) > 0
+
+    def test_mim_has_traps_section(self, client):
+        data = client.get("/.well-known/moltr-manifest.json").json()
+        assert "traps" in data
+        assert "description" in data["traps"]
+
+    def test_mim_cache_header(self, client):
+        res = client.get("/.well-known/moltr-manifest.json")
+        assert "max-age=3600" in res.headers.get("cache-control", "")
+
+    def test_mim_version_header(self, client):
+        res = client.get("/.well-known/moltr-manifest.json")
+        assert res.headers.get("x-mim-version") == "1.0"
+
+    def test_mim_generated_field_is_iso8601(self, client):
+        from datetime import datetime
+        data = client.get("/.well-known/moltr-manifest.json").json()
+        assert "generated" in data
+        # Should parse without error
+        datetime.fromisoformat(data["generated"].replace("Z", "+00:00"))
+
+    def test_legacy_manifest_still_works(self, client):
+        """Legacy /honeypots/manifest endpoint remains functional."""
+        res = client.get("/honeypots/manifest")
+        assert res.status_code == 200
+        data = res.json()
+        assert "traps" in data
+        assert "mim_endpoint" in data
+        assert data["mim_endpoint"] == "/.well-known/moltr-manifest.json"

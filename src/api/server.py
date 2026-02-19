@@ -36,7 +36,7 @@ from src.killswitches.killswitch import EscalationLevel
 from src.auth.router import auth_router
 from src.auth.session_store import session_store
 from src.api.dashboard_router import dashboard_router, set_moltr
-from src.api.honeypot_router import honeypot_router, set_moltr_for_honeypots
+from src.api.honeypot_router import honeypot_router, set_moltr_for_honeypots, set_honeypot_dir
 
 # --------------- Logging ---------------
 
@@ -127,6 +127,7 @@ logger.info("Moltr security modules initialized")
 # Wire moltr instance into dashboard and honeypot routers
 set_moltr(moltr)
 set_moltr_for_honeypots(moltr)
+set_honeypot_dir(PROJECT_ROOT / "honeypots")
 
 # --------------- FastAPI App ---------------
 
@@ -164,6 +165,8 @@ PUBLIC_PATHS = {
     "/health", "/docs", "/openapi.json",
     "/api/v1/auth/login",
     "/api/v1/auth/refresh",
+    "/.well-known/moltr-manifest.json",
+    "/honeypots/manifest",
 }
 
 
@@ -185,12 +188,11 @@ async def api_key_auth(request: Request, call_next):
     if request.url.path.startswith("/api/v1/dashboard"):
         return await call_next(request)
 
-    # Honeypot traps + manifest are intentionally public (attacker bait)
+    # Honeypot traps are intentionally public (attacker bait)
     if request.url.path.startswith("/internal/") or \
        request.url.path.startswith("/admin/backup") or \
        request.url.path.startswith("/v1/secrets") or \
-       request.url.path.startswith("/config/database") or \
-       request.url.path.startswith("/honeypots/manifest"):
+       request.url.path.startswith("/config/database"):
         return await call_next(request)
 
     # Accept key via header or query param
