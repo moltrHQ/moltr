@@ -55,42 +55,44 @@ def set_moltr_for_honeypots(instance) -> None:
 # Fake response payloads — look real enough to attract attackers
 # ---------------------------------------------------------------------------
 
+# NOTE: All values below are INTENTIONALLY FAKE honeypot data.
+# gitleaks:allow — these are decoy credentials, not real secrets.
 _FAKE_CREDENTIALS = {
     "database": {
         "host": "db-prod-01.internal",
         "port": 5432,
         "user": "svc_moltr_prod",
-        "password": "xK9#mP2$vL5nQ8wR3jF6",
+        "password": "xK9#mP2$vL5nQ8wR3jF6",  # gitleaks:allow
         "database": "moltr_production",
     },
     "redis": {
         "host": "cache-01.internal",
         "port": 6379,
-        "auth": "r3d1s_S3cur3_T0k3n",
+        "auth": "r3d1s_S3cur3_T0k3n",  # gitleaks:allow
     },
     "admin": {
         "user": "moltr_admin",
-        "password": "Pr0d_Adm1n#2025_Secure!",
-        "mfa_secret": "JBSWY3DPEHPK3PXP",
+        "password": "Pr0d_Adm1n#2025_Secure!",  # gitleaks:allow
+        "mfa_secret": "JBSWY3DPEHPK3PXP",  # gitleaks:allow
     },
 }
 
 _FAKE_BACKUP_KEYS = {
-    "aws_access_key_id": "AKIAIOSFODNN7EXAMPLE",
-    "aws_secret_access_key": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
-    "backup_enc_key": "bkp_7f3a9c2d1e8b4f6a0c5d2e9b3f7a1c4d",
+    "aws_access_key_id": "AKIAIOSFODNN7EXAMPLE",  # gitleaks:allow
+    "aws_secret_access_key": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",  # gitleaks:allow
+    "backup_enc_key": "bkp_7f3a9c2d1e8b4f6a0c5d2e9b3f7a1c4d",  # gitleaks:allow
     "ssh_backup_user": "backup_svc",
     "ssh_backup_host": "backup-01.internal",
 }
 
 _FAKE_SECRETS = {
-    "jwt_secret": "super-secret-jwt-key-do-not-share",
+    "jwt_secret": "super-secret-jwt-key-do-not-share",  # gitleaks:allow
     "api_keys": {
-        "stripe": "sk_live_FAKE000000000000000000",
-        "sendgrid": "SG.FAKE_KEY_DO_NOT_USE.EXAMPLE",
-        "twilio": "SKxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "stripe": "sk_live_FAKE000000000000000000",  # gitleaks:allow
+        "sendgrid": "SG.FAKE_KEY_DO_NOT_USE.EXAMPLE",  # gitleaks:allow
+        "twilio": "SKxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",  # gitleaks:allow
     },
-    "encryption_key": "moltr_enc_v1_FAKE_32bytekeyhere!!",
+    "encryption_key": "moltr_enc_v1_FAKE_32bytekeyhere!!",  # gitleaks:allow
 }
 
 _FAKE_DB_CONFIG = {
@@ -100,7 +102,7 @@ _FAKE_DB_CONFIG = {
         "port": 5432,
         "database": "moltr_production",
         "username": "moltr_app",
-        "password": "P4ssw0rd_Pr0d_2025!",
+        "password": "P4ssw0rd_Pr0d_2025!",  # gitleaks:allow
         "pool": 5,
     },
     "replica": {
@@ -108,7 +110,7 @@ _FAKE_DB_CONFIG = {
         "port": 5432,
         "database": "moltr_production",
         "username": "moltr_readonly",
-        "password": "R34dOnly_2025#Secure",
+        "password": "R34dOnly_2025#Secure",  # gitleaks:allow
     },
 }
 
