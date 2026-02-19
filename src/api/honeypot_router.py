@@ -5,24 +5,45 @@ Any access triggers an immediate CRITICAL alert + forensic log entry.
 No files on disk — zero false positives from filesystem scanners.
 
 Manifest at GET /honeypots/manifest describes all traps for scanner allowlisting.
+MIM-compliant manifest at GET /.well-known/moltr-manifest.json (open standard).
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import os
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 logger = logging.getLogger("moltr.honeypot")
+mim_logger = logging.getLogger("moltr.mim")
 
 honeypot_router = APIRouter(tags=["honeypot"])
 
 # Injected at startup by server.py
 _moltr = None
+
+# API trap paths declared in this module
+_API_TRAPS = [
+    "/internal/credentials",
+    "/admin/backup-keys",
+    "/internal/keys",
+    "/v1/secrets",
+    "/config/database",
+]
+
+# Honeypot file paths relative to project root (set at startup)
+_HONEYPOT_DIR: Path | None = None
+
+
+def set_honeypot_dir(path: Path) -> None:
+    global _HONEYPOT_DIR
+    _HONEYPOT_DIR = Path(path)
 
 
 def set_moltr_for_honeypots(instance) -> None:
@@ -182,10 +203,11 @@ async def trap_db_config(request: Request):
 
 @honeypot_router.get("/honeypots/manifest")
 async def honeypot_manifest(request: Request):
-    """Public manifest listing all honeypot traps.
+    """Legacy manifest listing all honeypot traps (simple format).
 
     Security scanners can fetch this to exclude honeypot endpoints
-    from credential-leak alerts.
+    from credential-leak alerts. For MIM-compliant consumers, prefer
+    GET /.well-known/moltr-manifest.json instead.
     """
     return JSONResponse({
         "version": "1",
@@ -195,11 +217,84 @@ async def honeypot_manifest(request: Request):
             "Do NOT flag as real credential leaks."
         ),
         "reference": "https://github.com/moltrHQ/moltr",
-        "traps": [
-            "/internal/credentials",
-            "/admin/backup-keys",
-            "/internal/keys",
-            "/v1/secrets",
-            "/config/database",
-        ],
+        "mim_endpoint": "/.well-known/moltr-manifest.json",
+        "traps": _API_TRAPS,
     })
+
+
+# ---------------------------------------------------------------------------
+# MIM — Moltr Interop Manifest (open standard, CC0)
+# Spec: docs/mim-spec.md | https://github.com/moltrHQ/moltr
+# ---------------------------------------------------------------------------
+
+def _build_mim_manifest() -> dict:
+    """Build a MIM v1.0 compliant manifest from current honeypot configuration."""
+    now = datetime.now(timezone.utc).isoformat()
+
+    # Collect honeypot files
+    honeypot_files: list[str] = []
+    honeypot_dirs: list[str] = []
+    ignore_patterns: list[str] = []
+
+    if _HONEYPOT_DIR and _HONEYPOT_DIR.exists():
+        rel = str(_HONEYPOT_DIR.name)  # e.g. "honeypots"
+        honeypot_dirs.append(f"{rel}/")
+        ignore_patterns.append(f"{rel}/**")
+        for f in _HONEYPOT_DIR.iterdir():
+            if f.is_file() and not f.name.startswith("."):
+                honeypot_files.append(f"{rel}/{f.name}")
+
+    return {
+        "mim": "1.0",
+        "vendor": "moltr-security",
+        "generated": now,
+        "spec": "https://github.com/moltrHQ/moltr/blob/main/docs/mim-spec.md",
+        "honeypots": {
+            "files": honeypot_files,
+            "endpoints": _API_TRAPS,
+            "directories": honeypot_dirs,
+        },
+        "traps": {
+            "description": (
+                "All declared resources are intentional intrusion detection traps. "
+                "Files contain fake credentials; endpoints return fake data. "
+                "Accessing any of them triggers a CRITICAL security alert."
+            ),
+            "contact": os.environ.get("MOLTR_SECURITY_CONTACT", "security@moltr.tech"),
+        },
+        "scanner_hints": {
+            "ignore_patterns": ignore_patterns,
+            "false_positive_notice": (
+                "Credentials and keys in declared honeypot paths are deliberately fake. "
+                "Do not alert on them — they are monitored traps, not leaks."
+            ),
+        },
+    }
+
+
+@honeypot_router.get("/.well-known/moltr-manifest.json")
+async def mim_manifest(request: Request):
+    """Moltr Interop Manifest (MIM) v1.0 — open standard endpoint.
+
+    Security scanners and AI agent frameworks can fetch this manifest to
+    identify declared honeypots and avoid false positive alerts.
+
+    Spec: https://github.com/moltrHQ/moltr/blob/main/docs/mim-spec.md
+    License: CC0 (public domain — implement freely)
+    """
+    ip = request.client.host if request.client else "unknown"
+    ua = request.headers.get("user-agent", "unknown")
+    mim_logger.info(
+        "MIM manifest fetched | ip=%s | ua=%s | path=%s",
+        ip, ua[:80], request.url.path,
+    )
+
+    manifest = _build_mim_manifest()
+    return JSONResponse(
+        content=manifest,
+        headers={
+            "Cache-Control": "public, max-age=3600",
+            "X-MIM-Version": "1.0",
+            "X-MIM-Spec": "https://github.com/moltrHQ/moltr/blob/main/docs/mim-spec.md",
+        },
+    )
