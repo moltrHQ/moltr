@@ -16,9 +16,9 @@ allowed_paths:
   # Temporary files
   - "/tmp/moltr/"
 
-  # Agent workspace (add your agent's allowed directories here)
-  # - "/home/agent/workspace/"
-  # - "/app/uploads/"
+  # Agent workspace
+  - "C:\\Users\\Administrator\\Desktop\\MoltrHQ Codebase\\moltr-workspace"
+  - "C:\\Users\\Administrator\\Desktop\\MoltrHQ Codebase\\claude-telegram-bot"
 
 # Explicitly blocked paths (always deny, even if inside allowed paths)
 blocked_paths:

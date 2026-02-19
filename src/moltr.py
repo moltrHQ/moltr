@@ -17,6 +17,8 @@ from src.validators.action_validator import ActionValidator, ValidationResult
 from src.validators.network_firewall import NetworkFirewall, FirewallVerdict
 from src.validators.filesystem_guard import FilesystemGuard, AccessResult
 from src.killswitches.killswitch import KillSwitch, EscalationLevel, KillSwitchEvent
+from src.watchdog.integrity import IntegrityWatchdog, IntegrityViolation
+from src.alerts.manager import Severity
 from src.alerts.telegram import TelegramAlert
 
 logger = logging.getLogger("moltr")
@@ -65,6 +67,20 @@ class Moltr:
         )
         self._killswitch = KillSwitch()
         self._telegram = TelegramAlert()
+
+        self._watchdog = IntegrityWatchdog(
+            project_root=self._project_root,
+            on_violation=self._handle_integrity_violation,
+        )
+
+        # Create initial baseline for critical paths (no honeypots dir — API traps used instead)
+        self._watchdog.create_baseline([
+            self._project_root / "config",
+            self._project_root / "src",
+        ])
+
+        # Start auto-check scheduler (every 60 seconds)
+        self._watchdog.start_scheduler(interval_seconds=60)
 
         logger.info("Moltr initialized with config: %s", self._config_path)
 
@@ -131,6 +147,7 @@ class Moltr:
             Dictionary mapping module names to their current state.
         """
         ks_status = self._killswitch.get_status()
+        wd_report = self._watchdog.get_report()
         return {
             "output_scanner": {
                 "enabled": True,
@@ -148,6 +165,12 @@ class Moltr:
                     else None
                 ),
             },
+            "integrity_watchdog": {
+                "enabled": True,
+                "files_monitored": wd_report["files_monitored"],
+                "last_check": wd_report["last_check"],
+                "total_violations": wd_report["total_violations"],
+            },
         }
 
     def emergency_stop(self, reason: str = "") -> None:
@@ -159,6 +182,28 @@ class Moltr:
         self._killswitch.trigger(EscalationLevel.LOCKDOWN, reason=reason)
         logger.critical("EMERGENCY STOP: %s", reason)
 
+    def _handle_integrity_violation(self, violations: list[IntegrityViolation]) -> None:
+        """Handle detected integrity violations — alert and optionally lockdown.
+
+        Args:
+            violations: List of detected violations.
+        """
+        summary = ", ".join(
+            f"{v.violation_type}: {Path(v.filepath).name}" for v in violations[:5]
+        )
+        if len(violations) > 5:
+            summary += f" (+{len(violations) - 5} more)"
+
+        logger.critical("INTEGRITY VIOLATION: %s", summary)
+
+        # Send Telegram alert if configured
+        if self._telegram.is_configured:
+            self._telegram.send(
+                severity=Severity.CRITICAL,
+                title="Integrity Violation Detected",
+                message=f"{len(violations)} file(s) tampered:\n{summary}",
+            )
+
     def get_killswitch_log(self) -> list[KillSwitchEvent]:
         """Return the kill switch event log.
 
@@ -166,3 +211,19 @@ class Moltr:
             List of KillSwitchEvent in chronological order.
         """
         return self._killswitch.get_log()
+
+    def verify_integrity(self) -> list[IntegrityViolation]:
+        """Run an integrity check on all monitored files.
+
+        Returns:
+            List of detected integrity violations.
+        """
+        return self._watchdog.verify_integrity()
+
+    def get_integrity_report(self) -> dict[str, Any]:
+        """Return the integrity watchdog status report.
+
+        Returns:
+            Report with baseline info, monitored files, and violations.
+        """
+        return self._watchdog.get_report()
