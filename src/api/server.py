@@ -15,6 +15,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -39,6 +41,7 @@ from src.api.dashboard_router import dashboard_router, set_moltr
 from src.api.honeypot_router import honeypot_router, set_moltr_for_honeypots, set_honeypot_dir
 from src.relay.router import relay_router, set_moltr_for_relay
 from src.relay.audit import init_audit
+from src.relay.registry import init_db, registry
 
 # --------------- Logging ---------------
 
@@ -139,10 +142,19 @@ set_moltr_for_relay(moltr)
 
 limiter = Limiter(key_func=get_remote_address)
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Startup: connect to DB and load relay bot registrations."""
+    await init_db()
+    await registry.load_from_db()
+    yield
+
+
 app = FastAPI(
     title="Moltr Security API",
     description="Security proxy for AI agent actions",
     version="0.2.0",
+    lifespan=lifespan,
 )
 app.state.limiter = limiter
 
