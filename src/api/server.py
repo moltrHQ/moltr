@@ -37,6 +37,8 @@ from src.auth.router import auth_router
 from src.auth.session_store import session_store
 from src.api.dashboard_router import dashboard_router, set_moltr
 from src.api.honeypot_router import honeypot_router, set_moltr_for_honeypots, set_honeypot_dir
+from src.relay.router import relay_router, set_moltr_for_relay
+from src.relay.audit import init_audit
 
 # --------------- Logging ---------------
 
@@ -51,6 +53,7 @@ logger = logging.getLogger("moltr.api")
 
 LOGS_DIR = PROJECT_ROOT / "logs"
 LOGS_DIR.mkdir(exist_ok=True)
+init_audit(LOGS_DIR)
 
 incident_logger = logging.getLogger("moltr.forensic")
 incident_logger.setLevel(logging.WARNING)
@@ -124,10 +127,11 @@ else:
 
 logger.info("Moltr security modules initialized")
 
-# Wire moltr instance into dashboard and honeypot routers
+# Wire moltr instance into dashboard, honeypot, and relay routers
 set_moltr(moltr)
 set_moltr_for_honeypots(moltr)
 set_honeypot_dir(PROJECT_ROOT / "honeypots")
+set_moltr_for_relay(moltr)
 
 # --------------- FastAPI App ---------------
 
@@ -146,6 +150,7 @@ app.state.limiter = limiter
 app.include_router(auth_router)
 app.include_router(dashboard_router)
 app.include_router(honeypot_router)
+app.include_router(relay_router)
 
 
 @app.exception_handler(RateLimitExceeded)
@@ -193,6 +198,10 @@ async def api_key_auth(request: Request, call_next):
        request.url.path.startswith("/admin/backup") or \
        request.url.path.startswith("/v1/secrets") or \
        request.url.path.startswith("/config/database"):
+        return await call_next(request)
+
+    # Relay endpoints use their own X-Relay-Bot/X-Relay-Key auth (not global X-API-Key)
+    if request.url.path.startswith("/relay/"):
         return await call_next(request)
 
     # Accept key via header or query param
