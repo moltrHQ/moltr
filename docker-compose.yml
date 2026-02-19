@@ -1,6 +1,24 @@
 version: "3.9"
 
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: moltr-postgres
+    environment:
+      - POSTGRES_DB=moltr_relay
+      - POSTGRES_USER=moltr
+      - POSTGRES_PASSWORD=moltr_relay_pw
+    volumes:
+      - moltr-postgres:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - moltr-internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U moltr -d moltr_relay"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   moltr-security:
     build: .
     container_name: moltr-security
@@ -13,26 +31,21 @@ services:
     environment:
       - MOLTR_MODE=enforce
       - MOLTR_LOG_LEVEL=INFO
+      - RELAY_DB_URL=postgresql://moltr:moltr_relay_pw@postgres:5432/moltr_relay
       # Optional: Telegram alerts
       # - MOLTR_TELEGRAM_BOT_TOKEN=your_bot_token
       # - MOLTR_TELEGRAM_CHAT_ID=your_chat_id
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
     networks:
       - moltr-internal
       - moltr-external
 
-  # Example: Your AI agent connects through Moltr
-  # agent:
-  #   image: your-agent-image
-  #   depends_on:
-  #     - moltr-security
-  #   environment:
-  #     - MOLTR_URL=http://moltr-security:8420
-  #   networks:
-  #     - moltr-internal    # Agent has NO direct internet access
-
 volumes:
   moltr-logs:
+  moltr-postgres:
 
 networks:
   moltr-internal:
