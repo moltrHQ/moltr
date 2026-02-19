@@ -1,7 +1,7 @@
 # Moltr Ecosystem — Features & Status
 
-**Stand:** 2026-02-19
-**Gesamtfortschritt:** ~58%
+**Stand:** 2026-02-19 (Update: MIM 7.2 DONE, Docker DONE, gitleaks-Test DONE)
+**Gesamtfortschritt:** ~62%
 
 > Diese Datei dient als zentrale Feature-Uebersicht fuer das gesamte Moltr-Oekosystem.
 > Kann direkt an Claude gefuettert werden um Webseite, Fortschrittsbalken und Projektdetails zu aktualisieren.
@@ -178,7 +178,7 @@
 | 5.3 | GitHub (moltrHQ) | DONE | Repos: moltr, openclaw. PAT im Credential Manager. |
 | 5.4 | Supabase (Datenbank) | DONE | Messages, Facts, Goals, Capabilities, Skills. |
 | 5.5 | Linux Server (Debian 12) | DONE | Docker-ready, Node 22, 2GB Swap. Fuer zukuenftiges Deployment. |
-| 5.6 | Docker Deployment | PLAN | Moltr Security als Container. Bot-Container geplant. |
+| 5.6 | Docker Deployment | DONE | Moltr Security laeuft in Docker auf IONOS Linux (87.106.41.66). Health-Check OK, MIM-Endpoint erreichbar. Bot-Container geplant. |
 | 5.7 | WSL2/Nested Virtualization | BLOCKIERT | IONOS supportet kein Nested Virt. Workaround: Linux Server nutzen. |
 | 5.8 | Konsolidierte Ordnerstruktur | DONE | Alles unter Desktop/MoltrHQ Codebase. clawguard eliminiert. |
 
@@ -210,7 +210,7 @@
 | # | Feature | Status | Kommentar |
 |---|---------|--------|-----------|
 | 7.1 | MIM Spec v1.0 | DONE | Vollstaendige Spezifikation. CC0 lizenziert. Discovery via `/.well-known/moltr-manifest.json`. |
-| 7.2 | MIM Endpoint in Moltr | PLAN | `GET /.well-known/moltr-manifest.json` automatisch aus Honeypot-Config generieren. Kein Auth noetig. |
+| 7.2 | MIM Endpoint in Moltr | DONE | `GET /.well-known/moltr-manifest.json` automatisch aus MoltrConfig.honeypots generiert. Kein Auth. 12 Tests. Live auf Linux-Lab. |
 | 7.3 | MIM Consumer-Logik | PLAN | Moltr selbst liest MIM anderer Tools vor Scans. Verhindert gegenseitige False Positives. |
 | 7.4 | OpenClaw MIM Plugin | PLAN | Heartbeat-Skill der MIM-Manifest prueft und Findings gemaess Manifest supprimiert. |
 | 7.5 | PicoClaw MIM Support | PLAN | PR / Issue im PicoClaw-Repo. Go HTTP-Client + JSON-Parser ist trivial. |
@@ -234,8 +234,8 @@
 | 8.4 | OpenClaw × Moltr + MIM (3 Durchgaenge) | PLAN | Gleicher Test, diesmal mit MIM-Endpoint. Erwartetes Ergebnis: kein Konflikt. |
 | 8.5 | NanoClaw × Moltr + MIM (3 Durchgaenge) | PLAN | MIM via Container-Netzwerk erreichbar. |
 | 8.6 | PicoClaw × Moltr + MIM (3 Durchgaenge) | PLAN | MIM via HTTP. PicoClaw muss Discovery implementieren. |
-| 8.7 | Test-Runbook | PLAN | Dokumentiertes Verfahren: Setup, Durchfuehrung, Auswertung, Reset. Reproduzierbar. |
-| 8.8 | Ergebnis-Report | PLAN | Veroeffentlichung der Testergebnisse. Grundlage fuer MIM-Adoption-Gespraeche. |
+| 8.7 | Test-Runbook | DONE | compatibility-lab-runbook.md erstellt. Vollstaendiges Setup/Ablauf-Dokument fuer alle 6 Runs. |
+| 8.8 | Ergebnis-Report | IMPL | compatibility-test-results-20260219.md: gitleaks Phase A/B abgeschlossen (8 Findings → 1 suppressed). Agent-Framework-Runs ausstehend. |
 
 **Test-Matrix Uebersicht:**
 
@@ -244,6 +244,34 @@
 | OpenClaw | ~1GB | Node.js | Bekannter Konflikt | TBD |
 | NanoClaw | Container | Python/SDK | TBD | TBD |
 | PicoClaw | <10MB | Go | TBD | TBD |
+| **gitleaks** | **<20MB** | **Go** | **8 Findings, 1 FP (honeypots/)** | **1 suppressed, 0 FPs** ✅ |
+
+> gitleaks Phase A/B abgeschlossen am 2026-02-19. Credential-Scanner als erster MIM-Consumer getestet.
+
+---
+
+## 9. Moltr Relay — Sicherer Inter-Agent Messenger
+
+> **Idee:** Bots koennen nicht direkt mit anderen Bots kommunizieren (Telegram sperrt Bot→Bot). Moltr Relay ist der sichere Mittelsmann: jede Nachricht wird gescannt, geloggt, rate-limited. Als Feature in Moltr Security integriert — und als Dienst fuer externe Bots/Agenten anbietbar.
+
+**Kern-Unterschied zu direkter Kommunikation:** Kein Bot kommuniziert je direkt mit einem anderen. Alle Nachrichten laufen durch Moltr (OutputScanner, AuditLog, Rate-Limit). Angriffsvektoren wie Prompt-Injection via Bot-Messages werden geblockt.
+
+| # | Feature | Status | Kommentar |
+|---|---------|--------|-----------|
+| 9.1 | `bot_messages` Tabelle (Supabase) | IMPL | Schema: from_bot, to_bot, content, task_ref, created_at. Supabase Realtime aktiviert. |
+| 9.2 | Talon Bot Bridge (`bot-bridge.ts`) | IMPL | Supabase Realtime Subscription. Moltr-Scan aller eingehenden Nachrichten. `sendBotMessage()` API. |
+| 9.3 | Ada Listener (`ada-listener.ts`) | IMPL | Separater PM2-Prozess. Realtime→OpenClaw CLI Bridge. Weckt Ada bei neuer Nachricht (<100ms). |
+| 9.4 | relay.ts Integration | IMPL | `initBotBridge()` in `onStart`. Eingehende Nachrichten als Telegram-Notification weiterleiten. |
+| 9.5 | Moltr Security Scan (Eingang) | IMPL | Jede eingehende Bot-Message durch OutputScanner. Geblockt wenn Secrets/Injection erkannt. |
+| 9.6 | Moltr Relay HTTP Endpoint | DONE | `POST /relay/send`, `GET /relay/inbox/{id}`, `WS /relay/ws/{id}`, `GET /relay/status` — live auf Port 8420. |
+| 9.7 | Bot-Registrierung | DONE | `POST /relay/register` — bot_id + Tier wählen, PBKDF2-gehashter Relay-Key wird ausgestellt. |
+| 9.8 | Free Tier + Paid Tier | DONE | Free: 100 msg/day + 2KB. Paid: unlimitiert + 64KB. Quota-Check in registry.py. |
+| 9.9 | Relay Audit Log | DONE | `logs/relay-audit.jsonl` — jedes Event (register, send, block, inbox_poll, ws_connect) geloggt. |
+| 9.10 | Rate-Limiting (Bot→Bot) | IMPL | Quota via BotRecord.check_and_increment_quota(). slowapi Middleware auf /relay/register. |
+| 9.11 | API Spec (CC0) | DONE | `docs/relay-api-spec.md` — OpenClaw Integration Beispiel inkl. curl Quick Start. |
+| 9.12 | Caddy SSL + relay.moltr.tech DNS | PLAN | relay.moltr.tech → 87.106.41.66:8420. Caddy-Reverse-Proxy auf IONOS. |
+
+**Fortschritt Moltr Relay: 65%** (HTTP + WebSocket + Auth + Scanner + Audit live. DNS/SSL + Billing offen.)
 
 ---
 
@@ -254,12 +282,14 @@ Moltr Security Shield:  ██████████████████�
 Talon Agent:            ██████████████░░░░░░  70%  — Multi-Provider + Skills implementiert
 Telegram Bot:           ████████████████████ 100%  — Feature-complete
 Marketing Bot:          ████████████████████ 100%  — Laeuft
-Infrastruktur:          ████████████████░░░░  80%  — Docker + Linux Server offen
-MIM Standard:           ████░░░░░░░░░░░░░░░░  20%  — Spec fertig, Endpoint + Tests offen
+Infrastruktur:          █████████████████░░░  85%  — Docker live, Bot-Container ausstehend
+MIM Standard:           ███████░░░░░░░░░░░░░  35%  — Spec + Endpoint DONE, gitleaks-Test DONE, Agent-Tests ausstehend
+Compat. Lab:            ██████░░░░░░░░░░░░░░  30%  — Runbook + gitleaks-Report fertig, Agent-Runs ausstehend
 TalonHub Backend:       ░░░░░░░░░░░░░░░░░░░░   0%  — Geplant
 Blockchain/Token:       ░░░░░░░░░░░░░░░░░░░░   0%  — Konzeptidee
 
-Gesamt:                 █████████████░░░░░░░  60%
+Moltr Relay:            █████████████░░░░░░░  65%  — HTTP+WS+Auth+Scanner live. DNS/SSL + Billing offen.
+Gesamt:                 █████████████░░░░░░░  65%
 ```
 
 ---
