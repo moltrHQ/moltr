@@ -201,18 +201,65 @@
 
 ---
 
+## 7. MIM — Moltr Interop Manifest Standard
+
+> **Idee:** Wir setzen den offenen Standard gegen Security-Tool-Konflikte. Kein proprietaerer Lock-in — CC0, jeder kann ihn implementieren. Moltr ist der Declarant, alle anderen Tools koennen Consumers werden.
+
+**Spec-Dokument:** `docs/mim-spec.md`
+
+| # | Feature | Status | Kommentar |
+|---|---------|--------|-----------|
+| 7.1 | MIM Spec v1.0 | DONE | Vollstaendige Spezifikation. CC0 lizenziert. Discovery via `/.well-known/moltr-manifest.json`. |
+| 7.2 | MIM Endpoint in Moltr | PLAN | `GET /.well-known/moltr-manifest.json` automatisch aus Honeypot-Config generieren. Kein Auth noetig. |
+| 7.3 | MIM Consumer-Logik | PLAN | Moltr selbst liest MIM anderer Tools vor Scans. Verhindert gegenseitige False Positives. |
+| 7.4 | OpenClaw MIM Plugin | PLAN | Heartbeat-Skill der MIM-Manifest prueft und Findings gemaess Manifest supprimiert. |
+| 7.5 | PicoClaw MIM Support | PLAN | PR / Issue im PicoClaw-Repo. Go HTTP-Client + JSON-Parser ist trivial. |
+| 7.6 | NanoClaw MIM Support | PLAN | PR / Issue im NanoClaw-Repo. Container-native Discovery. |
+| 7.7 | MIM Registry (GitHub) | PLAN | Oeffentliche Liste aller MIM-kompatiblen Tools. Community-driven. |
+
+---
+
+## 8. Compatibility Test Lab
+
+> **Idee:** Reproduzierbarer Beweis dass Moltr + alle gaengigen Agent-Frameworks konfliktfrei koexistieren — mit und ohne MIM. Linux-Server als isolierte Testumgebung.
+
+**Ziel:** Zeigen dass Security-Tool-Konflikte kein Schicksal sind, sondern ein geloestes Problem.
+**Server:** IONOS Linux (87.106.41.66), Debian 12, Docker 28.5.2
+
+| # | Test | Status | Kommentar |
+|---|------|--------|-----------|
+| 8.1 | OpenClaw × Moltr (3 Durchgaenge) | PLAN | Bekannter Konflikt: Honeypot-False-Positive erwartet. Baseline fuer Vergleich. |
+| 8.2 | NanoClaw × Moltr (3 Durchgaenge) | PLAN | Container-native → andere Scan-Mechanismen. Konflikt-Verhalten unbekannt. |
+| 8.3 | PicoClaw × Moltr (3 Durchgaenge) | PLAN | Go-binary, minimale Deps. Ressourcenarm. Konflikt-Verhalten unbekannt. |
+| 8.4 | OpenClaw × Moltr + MIM (3 Durchgaenge) | PLAN | Gleicher Test, diesmal mit MIM-Endpoint. Erwartetes Ergebnis: kein Konflikt. |
+| 8.5 | NanoClaw × Moltr + MIM (3 Durchgaenge) | PLAN | MIM via Container-Netzwerk erreichbar. |
+| 8.6 | PicoClaw × Moltr + MIM (3 Durchgaenge) | PLAN | MIM via HTTP. PicoClaw muss Discovery implementieren. |
+| 8.7 | Test-Runbook | PLAN | Dokumentiertes Verfahren: Setup, Durchfuehrung, Auswertung, Reset. Reproduzierbar. |
+| 8.8 | Ergebnis-Report | PLAN | Veroeffentlichung der Testergebnisse. Grundlage fuer MIM-Adoption-Gespraeche. |
+
+**Test-Matrix Uebersicht:**
+
+| Variante | RAM | Sprache | Ohne MIM | Mit MIM |
+|----------|-----|---------|----------|---------|
+| OpenClaw | ~1GB | Node.js | Bekannter Konflikt | TBD |
+| NanoClaw | Container | Python/SDK | TBD | TBD |
+| PicoClaw | <10MB | Go | TBD | TBD |
+
+---
+
 ## Zusammenfassung fuer Webseite
 
 ```
-Moltr Security Shield:  ████████████████████ 100%  — Production-ready
+Moltr Security Shield:  ████████████████████ 100%  — Production-ready (v1.0.0)
 Talon Agent:            ██████████████░░░░░░  70%  — Multi-Provider + Skills implementiert
 Telegram Bot:           ████████████████████ 100%  — Feature-complete
 Marketing Bot:          ████████████████████ 100%  — Laeuft
 Infrastruktur:          ████████████████░░░░  80%  — Docker + Linux Server offen
+MIM Standard:           ████░░░░░░░░░░░░░░░░  20%  — Spec fertig, Endpoint + Tests offen
 TalonHub Backend:       ░░░░░░░░░░░░░░░░░░░░   0%  — Geplant
 Blockchain/Token:       ░░░░░░░░░░░░░░░░░░░░   0%  — Konzeptidee
 
-Gesamt:                 ████████████░░░░░░░░  58%
+Gesamt:                 █████████████░░░░░░░  60%
 ```
 
 ---
