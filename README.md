@@ -181,8 +181,21 @@ python -m uvicorn src.api.server:app --host 0.0.0.0 --port 8420
 
 ## License
 
-**AGPL-3.0** — Copyright Walter Troska 2026
+Moltr Security Shield is **dual-licensed**:
 
-If you use Moltr, you share your improvements. That's the deal.
+| Use case | License |
+|---|---|
+| Open source, self-hosted, personal use | [AGPL-3.0](LICENSE) |
+| Proprietary / commercial / no source disclosure | [Moltr Commercial License](LICENSE-COMMERCIAL) |
 
-See [LICENSE](LICENSE) for the full text.
+**AGPL-3.0 (free tier / self-hosted):** You can use, modify, and distribute
+this software freely — as long as you publish your modifications under the
+same AGPL-3.0 terms. If you self-host and comply with AGPL, no license fee
+applies.
+
+**Commercial License (paid tier / proprietary use):** Required if you cannot
+or do not wish to comply with AGPL-3.0 copyleft — e.g., embedding in a
+closed-source product or offering as a managed service without source
+disclosure. Contact [hello@moltr.tech](mailto:hello@moltr.tech).
+
+Copyright (C) 2026 Walter Troska / moltrHQ

@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Moltr-Commercial
+# Copyright (C) 2026 Walter Troska / moltrHQ <hello@moltr.tech>
+# See LICENSE (AGPL-3.0) or LICENSE-COMMERCIAL for licensing terms.
+
 """Session Store — entschlüsselte Keys temporär auf Disk halten.
 
 Phase 1: Keys werden in ~/.moltr/session.json gespeichert (mit Expiry).
