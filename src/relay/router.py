@@ -101,6 +101,7 @@ def set_moltr_for_relay(moltr_instance: Any) -> None:
 class RegisterRequest(BaseModel):
     bot_id: str
     tier: str = "free"
+    admin_secret: str = ""
 
 
 class SendRequest(BaseModel):
@@ -132,9 +133,24 @@ async def relay_register(req: RegisterRequest):
 
     The relay_key is returned ONCE and stored hashed. Keep it secret.
     Re-registering the same bot_id invalidates the previous key.
+    Paid tier requires a valid admin_secret — otherwise silently downgraded to free.
     """
+    import os as _os
+    _admin_secret = _os.environ.get("RELAY_ADMIN_SECRET", "")
+
     bot_id = req.bot_id.strip().lower()
-    tier = req.tier.lower() if req.tier.lower() in ("free", "paid") else "free"
+    requested_tier = req.tier.lower() if req.tier.lower() in ("free", "paid") else "free"
+
+    # Paid-Tier Gate: only allow if admin_secret matches
+    if requested_tier == "paid":
+        if not _admin_secret or req.admin_secret != _admin_secret:
+            requested_tier = "free"
+            logger.warning(
+                "[Relay] Paid-tier denied for %s — invalid admin_secret (downgraded to free)", bot_id
+            )
+            log_relay_event("tier_downgrade", bot_id=bot_id, reason="invalid_admin_secret")
+
+    tier = requested_tier
 
     if not bot_id or len(bot_id) > 64:
         raise HTTPException(status_code=400, detail="bot_id must be 1-64 characters")
@@ -338,6 +354,33 @@ async def relay_ws(websocket: WebSocket, bot_id: str, key: str = ""):
             del _ws_connections[bot_id]
         log_relay_event("ws_disconnect", bot_id=bot_id)
         logger.info("[Relay] WebSocket disconnected: %s", bot_id)
+
+
+class SetTierRequest(BaseModel):
+    bot_id: str
+    tier: str
+
+
+@relay_router.post("/admin/set-tier")
+async def admin_set_tier(
+    req: SetTierRequest,
+    x_admin_secret: Optional[str] = Header(None),
+):
+    """Admin endpoint: forcibly set the tier for any registered bot.
+
+    Requires X-Admin-Secret header matching RELAY_ADMIN_SECRET env var.
+    """
+    import os as _os
+    _admin_secret = _os.environ.get("RELAY_ADMIN_SECRET", "")
+    if not _admin_secret or x_admin_secret != _admin_secret:
+        raise HTTPException(status_code=403, detail="Invalid admin secret")
+
+    ok = await registry.set_tier(req.bot_id, req.tier)
+    if not ok:
+        raise HTTPException(status_code=404, detail=f"Bot '{req.bot_id}' not registered")
+
+    log_relay_event("admin_set_tier", bot_id=req.bot_id, tier=req.tier)
+    return {"ok": True, "bot_id": req.bot_id, "tier": req.tier}
 
 
 @relay_router.get("/status")

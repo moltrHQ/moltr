@@ -208,6 +208,29 @@ class BotRegistry:
         async with self._lock:
             return self._bots.get(bot_id)
 
+    async def set_tier(self, bot_id: str, tier: str) -> bool:
+        """Update the tier of an existing bot. Returns False if bot not found."""
+        valid_tier = tier.lower() if tier.lower() in ("free", "paid") else "free"
+        async with self._lock:
+            record = self._bots.get(bot_id)
+            if not record:
+                return False
+            record.tier = valid_tier
+
+        # Persist to DB
+        if _pool:
+            try:
+                async with _pool.acquire() as conn:
+                    await conn.execute(
+                        "UPDATE relay_bots SET tier=$1 WHERE bot_id=$2",
+                        valid_tier, bot_id,
+                    )
+            except Exception as e:
+                logger.error("[Relay] DB tier-update failed for %s: %s", bot_id, e)
+
+        logger.info("[Relay] Tier updated: %s → %s", bot_id, valid_tier)
+        return True
+
     @property
     def bot_count(self) -> int:
         return len(self._bots)
