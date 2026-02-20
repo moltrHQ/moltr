@@ -1,7 +1,7 @@
 # Moltr Ecosystem — Features & Status
 
-**Stand:** 2026-02-19 (Update: MIM 7.2 DONE, Docker DONE, gitleaks-Test DONE)
-**Gesamtfortschritt:** ~62%
+**Stand:** 2026-02-19 (Update: Moltr Relay live, relay.openrelaynetwork.net SSL, Ada+Alpha Relay-Integration, YAML Kaffeefilter)
+**Gesamtfortschritt:** ~67%
 
 > Diese Datei dient als zentrale Feature-Uebersicht fuer das gesamte Moltr-Oekosystem.
 > Kann direkt an Claude gefuettert werden um Webseite, Fortschrittsbalken und Projektdetails zu aktualisieren.
@@ -269,9 +269,14 @@
 | 9.9 | Relay Audit Log | DONE | `logs/relay-audit.jsonl` — jedes Event (register, send, block, inbox_poll, ws_connect) geloggt. |
 | 9.10 | Rate-Limiting (Bot→Bot) | IMPL | Quota via BotRecord.check_and_increment_quota(). slowapi Middleware auf /relay/register. |
 | 9.11 | API Spec (CC0) | DONE | `docs/relay-api-spec.md` — OpenClaw Integration Beispiel inkl. curl Quick Start. |
-| 9.12 | Caddy SSL + relay.moltr.tech DNS | PLAN | relay.moltr.tech → 87.106.41.66:8420. Caddy-Reverse-Proxy auf IONOS. |
+| 9.12 | SSL + relay.moltr.tech DNS | DONE | relay.moltr.tech → 87.106.41.66:8420. nginx + Let's Encrypt (certbot) auf IONOS. Live und erreichbar. |
+| 9.13 | relay.openrelaynetwork.net | DONE | Zweite Domain fuer den Relay-Dienst. nginx vHost + Let's Encrypt SSL. Live auf IONOS. |
+| 9.14 | YAML Kaffeefilter (Agent-Level) | DONE | claw-alpha relay-poller.py + ada-listener.ts: nur YAML mit type∈{task,ping,query,response} + content wird zugestellt. Fake-Key-Injection → VERWORFEN. |
+| 9.15 | YAML Kaffeefilter (Relay-Level) | DONE | router.py _yaml_schema_check() in relay_send(). Defense in Depth (Ada's Empfehlung). 422 bei ungueltigem Schema. |
+| 9.16 | claw-alpha Relay-Poller | DONE | relay-poller.py auf 87.106.41.66. Pollt alle 10s, YAML-Filter, antwortet via openclaw run. PM2-Prozess: relay-poller. |
+| 9.17 | Ada Relay-Integration | DONE | ada-listener.ts: pollRelayInbox() + TypeScript YAML-Filter + deliverRelayToAda() → TALON-TO-ADA.md + Telegram-Ping. |
 
-**Fortschritt Moltr Relay: 65%** (HTTP + WebSocket + Auth + Scanner + Audit live. DNS/SSL + Billing offen.)
+**Fortschritt Moltr Relay: 90%** (HTTP+WS+Auth+Scanner+Audit+SSL+Domain+YAML-Filter+Ada+Alpha live. Billing + Paid-Tier-Enforcement offen.)
 
 ---
 
@@ -288,8 +293,8 @@ Compat. Lab:            ██████░░░░░░░░░░░░�
 TalonHub Backend:       ░░░░░░░░░░░░░░░░░░░░   0%  — Geplant
 Blockchain/Token:       ░░░░░░░░░░░░░░░░░░░░   0%  — Konzeptidee
 
-Moltr Relay:            █████████████░░░░░░░  65%  — HTTP+WS+Auth+Scanner live. DNS/SSL + Billing offen.
-Gesamt:                 █████████████░░░░░░░  65%
+Moltr Relay:            ██████████████████░░  90%  — HTTP+WS+Auth+Scanner+SSL+Domain+YAML-Filter+Ada+Alpha live. Billing offen.
+Gesamt:                 █████████████░░░░░░░  67%
 ```
 
 ---

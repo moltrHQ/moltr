@@ -15,6 +15,7 @@ Endpoints:
 from __future__ import annotations
 
 import logging
+import re
 import secrets
 import time
 from typing import Any, Optional
@@ -42,6 +43,51 @@ _relay_start_time = time.time()
 
 # WebSocket connection pool: bot_id → set[WebSocket]
 _ws_connections: dict[str, set[WebSocket]] = {}
+
+# ── YAML Kaffeefilter (relay-level Defense in Depth) ──────────────────────────
+_RELAY_ALLOWED_TYPES = frozenset({"task", "ping", "query", "response"})
+
+
+def _yaml_schema_check(raw: str) -> tuple[bool, str]:
+    """YAML Kaffeefilter on relay level (Defense in Depth, per Ada brainstorming).
+
+    Only accepts YAML with:
+    - type ∈ {task, ping, query, response}
+    - non-empty content field (inline or block-scalar)
+
+    Returns (ok, reason). No external yaml dependency needed.
+    """
+    if not raw or not raw.strip():
+        return False, "empty content"
+
+    # Simple flat key:value parser — skip indented block-scalar body lines
+    fields: dict[str, str] = {}
+    for line in raw.splitlines():
+        if line.startswith((" ", "\t")):
+            continue
+        colon = line.find(":")
+        if colon < 0:
+            continue
+        key = line[:colon].strip()
+        val = line[colon + 1:].strip().strip("'\"")
+        if key:
+            fields[key] = val
+
+    msg_type = fields.get("type", "")
+    if msg_type not in _RELAY_ALLOWED_TYPES:
+        return False, f"invalid type: '{msg_type}'"
+
+    # Check content field — support inline value and block scalar (|, >)
+    raw_content_val = fields.get("content", "")
+    if raw_content_val and raw_content_val not in ("|", ">", "|-", ">-"):
+        return True, "ok"
+
+    # Block scalar: look for indented lines following "content: |"
+    m = re.search(r"^content:\s*[|>-]{1,2}\s*\n((?:[ \t]+.+\n?)+)", raw, re.MULTILINE)
+    if not m or not m.group(1).strip():
+        return False, "missing or empty content"
+
+    return True, "ok"
 
 
 def set_moltr_for_relay(moltr_instance: Any) -> None:
@@ -159,6 +205,24 @@ async def relay_send(
                 status_code=403,
                 detail=f"Message blocked by Moltr Security: {scan.threat_type}",
             )
+
+    # ── YAML Kaffeefilter (relay-level Defense in Depth) ──────────────────────
+    schema_ok, schema_reason = _yaml_schema_check(req.content)
+    if not schema_ok:
+        log_relay_event(
+            "schema_rejected",
+            from_bot=record.bot_id,
+            to_bot=req.to,
+            reason=schema_reason,
+        )
+        logger.warning(
+            "[Relay] YAML schema rejected %s → %s: %s",
+            record.bot_id, req.to, schema_reason,
+        )
+        raise HTTPException(
+            status_code=422,
+            detail=f"Message rejected by YAML schema filter: {schema_reason}",
+        )
 
     # ── Deliver ───────────────────────────────────────────────────────────────
     msg_id = secrets.token_hex(8)
