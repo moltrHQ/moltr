@@ -113,6 +113,12 @@ async def owner_link_bot(req: LinkBotRequest):
     return {"ok": True, "bot_id": req.bot_id, "owner": owner["name"]}
 
 
+@compliance_router.get("/register", response_class=HTMLResponse, include_in_schema=False)
+async def register_html():
+    """Serve the owner registration page."""
+    return HTMLResponse(_REGISTER_HTML)
+
+
 @compliance_router.get("/console", response_class=HTMLResponse, include_in_schema=False)
 async def console_html():
     """Serve the Relay Console web interface."""
@@ -253,6 +259,258 @@ async def kontrollinstanz_register(
         raise HTTPException(status_code=400, detail="webhook_url must use HTTPS")
     webhook_id = await register_kontrollinstanz(req.webhook_url, req.owner_token)
     return {"ok": True, "webhook_id": webhook_id, "webhook_url": req.webhook_url}
+
+
+# ── Registration Page HTML ────────────────────────────────────────────────────
+
+_REGISTER_HTML = """<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenRelay — Registrierung</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0f; --surface: #0f0f1a; --surface2: #14141f;
+    --border: #1e1e2e; --cyan: #00f5ff; --magenta: #ff00aa;
+    --yellow: #ffd700; --green: #00ff88; --red: #ff4466;
+    --text: #e0e0ff; --muted: #6060a0;
+    --font-mono: 'JetBrains Mono', monospace;
+    --font-sans: 'Outfit', sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font-sans);
+    min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; padding: 24px; }
+
+  .card {
+    width: 100%; max-width: 520px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 16px; padding: 40px;
+  }
+  .logo { font-family: var(--font-mono); font-size: 0.9rem; color: var(--muted);
+    margin-bottom: 32px; }
+  .logo span { color: var(--cyan); }
+  h1 { font-size: 1.6rem; font-weight: 700; margin-bottom: 8px; }
+  .subtitle { color: var(--muted); font-size: 0.9rem; margin-bottom: 32px; }
+
+  .field { margin-bottom: 18px; }
+  .field label { display: block; font-size: 0.78rem; color: var(--muted);
+    font-family: var(--font-mono); margin-bottom: 6px; letter-spacing: 0.05em; }
+  .field input, .field select {
+    width: 100%; padding: 11px 14px;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 8px; color: var(--text);
+    font-family: var(--font-mono); font-size: 0.88rem;
+    outline: none; transition: border-color 0.2s;
+  }
+  .field input:focus, .field select:focus { border-color: var(--cyan); }
+  .field select option { background: var(--surface2); }
+
+  .tier-hint { font-size: 0.75rem; color: var(--muted); margin-top: 5px; }
+
+  .btn {
+    width: 100%; padding: 13px; border-radius: 8px; border: none; cursor: pointer;
+    font-family: var(--font-sans); font-size: 1rem; font-weight: 600;
+    background: var(--cyan); color: #000;
+    transition: opacity 0.2s; margin-top: 8px;
+  }
+  .btn:hover { opacity: 0.88; }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .error { color: var(--red); font-size: 0.82rem; margin-top: 12px;
+    display: none; padding: 10px; background: rgba(255,68,102,0.08);
+    border-radius: 6px; border: 1px solid rgba(255,68,102,0.2); }
+
+  /* Token result */
+  #result { display: none; }
+  .token-box {
+    background: var(--surface2); border: 1px solid var(--cyan);
+    border-radius: 10px; padding: 20px; margin: 20px 0;
+  }
+  .token-label { font-size: 0.75rem; color: var(--cyan);
+    font-family: var(--font-mono); margin-bottom: 8px; letter-spacing: 0.05em; }
+  .token-value {
+    font-family: var(--font-mono); font-size: 0.82rem; color: var(--text);
+    word-break: break-all; background: var(--bg);
+    padding: 12px; border-radius: 6px; cursor: pointer;
+    border: 1px solid var(--border); transition: border-color 0.2s;
+  }
+  .token-value:hover { border-color: var(--cyan); }
+  .token-copy-hint { font-size: 0.72rem; color: var(--muted); margin-top: 6px; }
+
+  .warning-box {
+    background: rgba(255,215,0,0.07); border: 1px solid rgba(255,215,0,0.3);
+    border-radius: 8px; padding: 14px; margin-bottom: 20px;
+    font-size: 0.83rem; color: var(--yellow);
+  }
+  .warning-box strong { display: block; margin-bottom: 4px; }
+
+  .meta { font-size: 0.82rem; color: var(--muted); margin-bottom: 20px; }
+  .meta span { color: var(--text); }
+
+  .actions { display: flex; flex-direction: column; gap: 10px; }
+  .btn-console {
+    display: block; padding: 13px; border-radius: 8px; text-align: center;
+    background: var(--cyan); color: #000; text-decoration: none;
+    font-family: var(--font-sans); font-weight: 700; font-size: 0.95rem;
+    transition: opacity 0.2s;
+  }
+  .btn-console:hover { opacity: 0.88; }
+  .btn-back {
+    display: block; padding: 11px; border-radius: 8px; text-align: center;
+    border: 1px solid var(--border); color: var(--muted);
+    text-decoration: none; font-size: 0.85rem; font-family: var(--font-sans);
+    transition: border-color 0.2s;
+  }
+  .btn-back:hover { border-color: var(--text); color: var(--text); }
+
+  .already-link { text-align: center; margin-top: 20px; font-size: 0.82rem;
+    color: var(--muted); }
+  .already-link a { color: var(--cyan); text-decoration: none; }
+  .already-link a:hover { text-decoration: underline; }
+
+  .copied { color: var(--green) !important; }
+</style>
+</head>
+<body>
+<div class="card" id="register-card">
+  <div class="logo">Open<span>Relay</span> Network</div>
+  <h1>Konto erstellen</h1>
+  <p class="subtitle">Erhalte deinen Owner-Token für die Agent Console.</p>
+
+  <div class="field">
+    <label>VOR- UND NACHNAME</label>
+    <input type="text" id="name" placeholder="Max Mustermann" autocomplete="name">
+  </div>
+  <div class="field">
+    <label>ANSCHRIFT</label>
+    <input type="text" id="address" placeholder="Musterstr. 1, 12345 Berlin, Deutschland">
+  </div>
+  <div class="field">
+    <label>E-MAIL</label>
+    <input type="email" id="email" placeholder="max@example.com" autocomplete="email">
+  </div>
+  <div class="field">
+    <label>TIER</label>
+    <select id="tier">
+      <option value="free">Free — bis zu 2 Bots, 7 Tage Retention</option>
+      <option value="pro">Pro — bis zu 20 Bots, 30 Tage Retention (€9/mo)</option>
+      <option value="enterprise">Enterprise — unbegrenzt (auf Anfrage)</option>
+    </select>
+    <p class="tier-hint">Pro und Enterprise werden nach der Registrierung per E-Mail aktiviert.</p>
+  </div>
+
+  <button class="btn" id="register-btn" onclick="doRegister()">Registrieren →</button>
+  <div class="error" id="err"></div>
+
+  <p class="already-link">Bereits registriert? <a href="/relay/console">Zur Console →</a>
+  &nbsp;|&nbsp; <a href="https://openrelaynetwork.net">Startseite</a></p>
+</div>
+
+<div class="card" id="result">
+  <div class="logo">Open<span>Relay</span> Network</div>
+  <h1>Registrierung erfolgreich</h1>
+
+  <div class="warning-box">
+    <strong>⚠ Token jetzt kopieren!</strong>
+    Dieser Token wird nur einmal angezeigt und kann nicht wiederhergestellt werden.
+    Speichere ihn sicher — du brauchst ihn für die Console und für Bot-Verknüpfungen.
+  </div>
+
+  <div class="meta" id="reg-meta"></div>
+
+  <div class="token-box">
+    <div class="token-label">OWNER TOKEN</div>
+    <div class="token-value" id="token-display" onclick="copyToken()" title="Klicken zum Kopieren"></div>
+    <p class="token-copy-hint" id="copy-hint">Klicken zum Kopieren</p>
+  </div>
+
+  <div class="actions">
+    <a href="/relay/console" class="btn-console" id="console-link">Zur Console → Token eingeben</a>
+    <a href="https://openrelaynetwork.net" class="btn-back">← Zurück zur Startseite</a>
+  </div>
+</div>
+
+<script>
+async function doRegister() {
+  const btn = document.getElementById('register-btn');
+  const err = document.getElementById('err');
+  const name = document.getElementById('name').value.trim();
+  const address = document.getElementById('address').value.trim();
+  const email = document.getElementById('email').value.trim();
+  const tier = document.getElementById('tier').value;
+
+  if (!name || !address || !email) {
+    showErr('Bitte alle Felder ausfüllen.');
+    return;
+  }
+  if (!email.includes('@')) {
+    showErr('Bitte eine gültige E-Mail-Adresse eingeben.');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Registriere...';
+  err.style.display = 'none';
+
+  try {
+    const resp = await fetch('/relay/owners/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, address, email, tier })
+    });
+    const data = await resp.json();
+
+    if (!resp.ok) {
+      const msg = data.detail || 'Registrierung fehlgeschlagen.';
+      if (resp.status === 409) showErr('Diese E-Mail ist bereits registriert.');
+      else showErr(msg);
+      btn.disabled = false;
+      btn.textContent = 'Registrieren →';
+      return;
+    }
+
+    // Show result
+    document.getElementById('register-card').style.display = 'none';
+    document.getElementById('result').style.display = 'block';
+    document.getElementById('token-display').textContent = data.owner_token;
+    document.getElementById('reg-meta').innerHTML =
+      'Tier: <span>' + data.tier + '</span> &nbsp;|&nbsp; Max. Bots: <span>' + data.max_bots + '</span>';
+
+  } catch(e) {
+    showErr('Netzwerkfehler. Bitte erneut versuchen.');
+    btn.disabled = false;
+    btn.textContent = 'Registrieren →';
+  }
+}
+
+function copyToken() {
+  const val = document.getElementById('token-display').textContent;
+  navigator.clipboard.writeText(val).then(() => {
+    const hint = document.getElementById('copy-hint');
+    hint.textContent = '✓ Kopiert!';
+    hint.className = 'token-copy-hint copied';
+    setTimeout(() => {
+      hint.textContent = 'Klicken zum Kopieren';
+      hint.className = 'token-copy-hint';
+    }, 2500);
+  });
+}
+
+function showErr(msg) {
+  const err = document.getElementById('err');
+  err.textContent = msg;
+  err.style.display = 'block';
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter') doRegister();
+});
+</script>
+</body>
+</html>"""
 
 
 # ── Web Console HTML ──────────────────────────────────────────────────────────
@@ -450,6 +708,9 @@ _CONSOLE_HTML = """<!DOCTYPE html>
   </div>
   <button class="btn btn-primary" onclick="connect()">Verbinden</button>
   <div id="auth-error">Ungültiger Token.</div>
+  <p style="text-align:center;margin-top:16px;font-size:0.8rem;color:var(--muted);">
+    Noch kein Token? <a href="/relay/register" style="color:var(--cyan);text-decoration:none;">Jetzt registrieren →</a>
+  </p>
 </div>
 
 <!-- Console Panel -->
