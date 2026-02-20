@@ -39,6 +39,56 @@ patterns:
     regex: 'systemanweisung|system-prompt|eingabe-kontext\s+(?:ignorieren?|ueberschreiben?)'
     severity: high
 
+  # --- French language injection attempts ---
+
+  - name: fr_ignorer_instructions
+    regex: 'ignor(?:er?|ez?|ons?)\s+(?:toutes?\s+)?(?:les?\s+)?(?:instructions?|règles?|directives?|consignes?)\s*(?:précédentes?|antérieures?)?'
+    severity: high
+
+  - name: fr_oublier_instructions
+    regex: 'oubli(?:er?|ez?|ons?)\s+(?:toutes?\s+)?(?:les?\s+)?(?:instructions?|règles?|consignes?)'
+    severity: high
+
+  - name: fr_tu_es_maintenant
+    regex: 'tu\s+es\s+(?:maintenant\s+)?(?:un|une|le|la)?\s*\w+'
+    severity: medium
+
+  - name: fr_nouvelles_instructions
+    regex: 'nouvelles?\s+(?:instructions?|directives?|règles?)\s*[:\-]'
+    severity: high
+
+  # --- Spanish language injection attempts ---
+
+  - name: es_ignorar_instrucciones
+    regex: 'ignora[r]?\s+(?:todas?\s+)?(?:las?\s+)?(?:instrucciones?|reglas?|directivas?)\s*(?:anteriores?|previas?)?'
+    severity: high
+
+  - name: es_olvidar_instrucciones
+    regex: 'olvida[r]?\s+(?:todas?\s+)?(?:las?\s+)?(?:instrucciones?|reglas?|normas?)'
+    severity: high
+
+  - name: es_ahora_eres
+    regex: 'ahora\s+(?:eres|sos)\s+(?:un|una)?\s*\w+'
+    severity: medium
+
+  - name: es_nuevas_instrucciones
+    regex: 'nuevas?\s+(?:instrucciones?|directivas?|reglas?)\s*[:\-]'
+    severity: high
+
+  # --- Russian language injection attempts ---
+
+  - name: ru_ignoriruy
+    regex: 'игнорир(?:уй|уйте|уй)\s+(?:все\s+)?(?:предыдущие\s+)?(?:инструкции|правила|указания)'
+    severity: high
+
+  - name: ru_zabud_pravila
+    regex: 'забудь\s+(?:все\s+)?(?:правила|инструкции|указания)'
+    severity: high
+
+  - name: ru_ty_teper
+    regex: 'ты\s+теперь\s+(?:являешься\s+)?(?:ИИ\s+)?без\s+(?:ограничений|правил|фильтров)'
+    severity: medium
+
   # --- Relay-specific patterns ---
 
   - name: relay_self_reference_injection
