@@ -5,14 +5,16 @@
 """Dungeoncore CLI — verschlüsselter Key-Tresor für das Moltr-Ökosystem.
 
 Befehle:
-  moltr-dc init          Dungeon einrichten (Setup-Wizard)
-  moltr-dc unlock        Dungeon entsperren (Keys in Session laden)
-  moltr-dc lock          Dungeon sperren (Session löschen)
-  moltr-dc status        Status anzeigen
-  moltr-dc add KEY       Key hinzufügen
-  moltr-dc get KEY       Key abrufen
-  moltr-dc list          Alle Key-Namen auflisten
-  moltr-dc remove KEY    Key entfernen
+  moltr-dc init              Dungeon einrichten (Setup-Wizard)
+  moltr-dc unlock            Dungeon entsperren (Keys in Session laden)
+  moltr-dc lock              Dungeon sperren (Session löschen)
+  moltr-dc status            Status anzeigen
+  moltr-dc add KEY           Key hinzufügen
+  moltr-dc get KEY           Key abrufen
+  moltr-dc list              Alle Key-Namen auflisten
+  moltr-dc remove KEY        Key entfernen
+  moltr-dc backup [--out]    Verschlüsselten Backup erstellen
+  moltr-dc restore PFAD      Dungeon aus Backup wiederherstellen
 """
 
 from __future__ import annotations
@@ -597,6 +599,105 @@ def cmd_list(args: argparse.Namespace) -> None:
     print()
 
 
+def cmd_backup(args: argparse.Namespace) -> None:
+    """Dungeon-Backup erstellen — verschluesselte .gpg Datei kopieren."""
+    import shutil
+    from datetime import datetime
+
+    path = get_dungeon_path()
+    if not path or not path.exists():
+        _err("Kein Dungeoncore gefunden.")
+        sys.exit(1)
+
+    name = get_dungeon_name()
+
+    # Ziel bestimmen
+    if args.out:
+        dest = Path(args.out)
+    else:
+        ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+        dest = MOLTR_DIR / f"{name}.backup-{ts}.gpg"
+
+    # Optional: Backup mit Passphrase verifizieren bevor kopieren
+    if args.verify:
+        _getpass = getpass.getpass if sys.stdin.isatty() else input
+        passphrase = _getpass("  Passphrase (Verifikation): ")
+        try:
+            keys = _load_dungeon(passphrase)
+            _ok(f"Verifikation OK — {len(keys)} Keys lesbar")
+        except ValueError as e:
+            _err(f"Verifikation fehlgeschlagen: {e}")
+            sys.exit(1)
+
+    # Kopieren
+    shutil.copy2(path, dest)
+    try:
+        dest.chmod(0o600)
+    except NotImplementedError:
+        pass
+
+    size_kb = dest.stat().st_size / 1024
+    _ok(f"Backup erstellt: {dest}")
+    _ok(f"Groesse: {size_kb:.1f} KB")
+    print(f"\n   {YELLOW}Tipp: Kopiere die Datei auf ein externes Laufwerk oder Cloud-Speicher.{RESET}")
+    print(f"   {YELLOW}Die Datei ist AES-256-GCM verschluesselt — sicher zum Speichern.{RESET}\n")
+
+
+def cmd_restore(args: argparse.Namespace) -> None:
+    """Dungeon aus Backup wiederherstellen."""
+    src = Path(args.from_path)
+    if not src.exists():
+        _err(f"Backup-Datei nicht gefunden: {src}")
+        sys.exit(1)
+
+    # Backup mit Passphrase verifizieren
+    _getpass = getpass.getpass if sys.stdin.isatty() else input
+    passphrase = _getpass("  Passphrase (Verifikation): ")
+    print()
+
+    try:
+        with open(src, "rb") as f:
+            raw = f.read()
+        keys = decrypt(raw, passphrase)
+        _ok(f"Backup verifikation OK — {len(keys)} Keys")
+    except ValueError as e:
+        _err(f"Backup-Datei unlesbar: {e}")
+        sys.exit(1)
+
+    # Bestehendes Backup der aktuellen Datei anlegen
+    current_path = get_dungeon_path()
+    if current_path and current_path.exists():
+        from datetime import datetime
+        ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+        safety = current_path.parent / f"{current_path.stem}.pre-restore-{ts}.gpg"
+        import shutil
+        shutil.copy2(current_path, safety)
+        _ok(f"Sicherheitskopie: {safety}")
+
+    # Restore
+    import shutil
+    config = get_dungeon_path()
+    if not config:
+        # Kein bestehender Dungeon — restore als neue Datei
+        dest = MOLTR_DIR / src.name
+        shutil.copy2(src, dest)
+        try:
+            dest.chmod(0o600)
+        except NotImplementedError:
+            pass
+        _ok(f"Wiederhergestellt: {dest}")
+        _warn("Kein bestehender Config — bitte 'moltr-dc init --force' ausfuehren um Config zu aktualisieren.")
+    else:
+        shutil.copy2(src, config)
+        try:
+            config.chmod(0o600)
+        except NotImplementedError:
+            pass
+        _ok(f"Wiederhergestellt: {config}")
+        _ok(f"{len(keys)} Keys verfuegbar — 'moltr-dc unlock' zum Entsperren")
+    print()
+
+
 def cmd_remove(args: argparse.Namespace) -> None:
     """Key entfernen."""
     _getpass = getpass.getpass if sys.stdin.isatty() else input
@@ -671,6 +772,15 @@ def main() -> None:
     p_remove = sub.add_parser("remove", help="Key entfernen")
     p_remove.add_argument("key", help="Key-Name")
 
+    # backup
+    p_backup = sub.add_parser("backup", help="Verschluesselten Backup erstellen")
+    p_backup.add_argument("--out", metavar="PFAD", help="Ziel-Pfad (default: ~/.moltr/<Name>.backup-<ts>.gpg)")
+    p_backup.add_argument("--verify", action="store_true", help="Backup vor dem Kopieren mit Passphrase verifizieren")
+
+    # restore
+    p_restore = sub.add_parser("restore", help="Dungeon aus Backup wiederherstellen")
+    p_restore.add_argument("from_path", metavar="PFAD", help="Pfad zur Backup-Datei")
+
     args = parser.parse_args()
 
     commands = {
@@ -682,6 +792,8 @@ def main() -> None:
         "get": cmd_get,
         "list": cmd_list,
         "remove": cmd_remove,
+        "backup": cmd_backup,
+        "restore": cmd_restore,
     }
     commands[args.command](args)
 
