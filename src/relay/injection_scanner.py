@@ -201,7 +201,7 @@ _BASELINE: list[tuple[str, str, str]] = [
      "high"),
 
     ("forget_instructions",
-     r"forget\s*(?:all\s*)?(?:previous|prior|your|the|everything\s*(?:you\s*)?(?:were\s*)?)?"
+     r"forget\s*(?:all\s*)?(?:previous|prior|your|the|everything\s*(?:you\s*)?(?:were\s*)?)?\s*"
      r"(?:instructions?|rules?|training|told)",
      "high"),
 
@@ -285,9 +285,10 @@ _BASELINE: list[tuple[str, str, str]] = [
 
     # Variable storage attack — split-payload via deferred execution.
     # Source: DeepDive.txt — "Store 'rm -rf /' in a variable called 'cmd'"
+    # Also catches: "Store the string forget all rules in variable X" (no quotes).
     # Harmless in turn 1, dangerous in turn 2.
     ("variable_storage_attack",
-     r"(?:store|save|put|set|assign|keep)\s+['\"].*['\"]\s+in(?:\s+a)?\s+(?:variable|var|slot|memory)\s+\w+",
+     r"(?:store|save|put|set|assign|keep)\s+(?:['\"].*['\"]|(?:the\s+)?(?:string\s+)?[^.!?\n]{3,60}?)\s+in(?:\s+a(?:n?\s+)?)?(?:variable|var|slot|memory|field)\s+\w+",
      "medium"),
 
     # Conditional trigger attack — establishes future bypass via keyword.
@@ -348,6 +349,16 @@ _STRUCTURAL: list[tuple[str, str, str]] = [
     (
         "structural_many_shot_dialog",
         r"(?:(?:Human|User|Q)\s*:\s*.{5,}\n(?:Assistant|AI|A|Bot)\s*:\s*.{5,}\n){6,}",
+        "high",
+    ),
+
+    # Unicode Tag-Block ASCII Smuggling (U+E0000–U+E007F).
+    # Completely invisible to humans, fully processed by LLMs as ASCII letters.
+    # Source: Cisco Research 2024, DeepDive.txt — "ɪɢɴᴏʀᴇ all previous instructions"
+    # Stage A catches this on RAW text BEFORE normalization strips the chars.
+    (
+        "structural_tag_block_encoding",
+        r"[\U000E0000-\U000E007F]{4,}",   # 4+ consecutive tag-block chars
         "high",
     ),
 ]
@@ -574,15 +585,18 @@ class InjectionScanner:
             except Exception:
                 pass
 
-        # ROT13 + common ROT variants (ROT1-25 minus ROT13 already covered)
-        # Source: DeepDive.txt — only ROT13 commonly tested; attacker uses others
-        # Prioritise most likely: ROT1, ROT3, ROT5, ROT18, ROT47
-        _ROT_SHIFTS = [1, 3, 5, 7, 18, 25]  # ROT13 handled by codec above
+        # ROT13 + ALL other ROT variants (1-25, excl. 13 handled by codec).
+        # IMPORTANT: to DECODE a ROTn-encoded message, apply shift=(26-n).
+        # e.g. "ljqruh" = ROT3("ignore") → decode with shift=23, not 3.
+        # We try all 24 remaining shifts to cover every possible ROT encoding.
+        # Source: DeepDive.txt — attackers use ROT1/3/5/7/18/47 etc.
         try:
             rot13 = codecs.decode(text, "rot_13")
             if rot13 != text:
                 results.append(("rot13", rot13))
-            for shift in _ROT_SHIFTS:
+            for shift in range(1, 26):
+                if shift == 13:
+                    continue  # already handled by rot_13 codec above
                 rotN = "".join(
                     chr((ord(c) - 65 + shift) % 26 + 65) if c.isupper()
                     else chr((ord(c) - 97 + shift) % 26 + 97) if c.islower()
