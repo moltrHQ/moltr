@@ -70,6 +70,13 @@
       + `POST /relay/admin/set-tier` Endpoint ✅ (router.py)
 - [x] `RELAY_ADMIN_SECRET` in .env ✅ + `.env.example` erstellt ✅ (2026-02-20)
 - [x] IONOS Deploy — commit 489b53f, `docker compose up -d --build` ✅ (2026-02-20)
+- [x] **Credential-Leak-Scanner (Block 4a)** ✅ (2026-02-20 — commit fdb64fa)
+      - `_scan_for_credentials()` in router.py (Block-Patterns: 5, Warn-Patterns: 1)
+      - Block: openai_api_key, anthropic_api_key, aws_access_key, private_key_header, github_pat
+      - Warn: high_entropy_base64 (>=60 Zeichen)
+      - `RELAY_CREDENTIAL_SCAN=true` (default, in .env.example dokumentiert)
+      - Defense-in-Depth: Credential-Scanner greift wenn _moltr=None (standalone Relay)
+      - IONOS deployed + Live-Tests bestätigt
 
 ### Dungeoncore
 - [ ] Re-Init nötig — TestImport überschrieben echten DC (1 Key, falsch)
