@@ -143,8 +143,20 @@ def _dec(text: str, encrypted: bool) -> str:
 
 # ── Core functions ────────────────────────────────────────────────────────────
 
-async def persist_message(msg: Any, ttl_seconds: int = _TTL_FREE) -> None:
-    """Persist a relay message. Notifies SSE listeners and webhooks."""
+async def persist_message(
+    msg: Any,
+    ttl_seconds: int = _TTL_FREE,
+    flagged: bool = False,
+    flag_reason: str = "",
+) -> None:
+    """Persist a relay message. Notifies SSE listeners and webhooks.
+
+    Args:
+        msg: RelayMessage instance.
+        ttl_seconds: Retention period.
+        flagged: If True, mark as flagged immediately (e.g. injection detected).
+        flag_reason: Human-readable reason shown in compliance console.
+    """
     if not _pool:
         return
 
@@ -155,11 +167,19 @@ async def persist_message(msg: Any, ttl_seconds: int = _TTL_FREE) -> None:
         async with _pool.acquire() as conn:
             await conn.execute("""
                 INSERT INTO relay_messages
-                    (msg_id, from_bot, to_bot, content, content_encrypted, created_at, expires_at)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    (msg_id, from_bot, to_bot, content, content_encrypted,
+                     flagged, created_at, expires_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                 ON CONFLICT (msg_id) DO NOTHING
             """, msg.msg_id, msg.from_bot, msg.to_bot,
-                content_stored, encrypted, now, now + ttl_seconds)
+                content_stored, encrypted, flagged, now, now + ttl_seconds)
+
+            if flagged and flag_reason:
+                await conn.execute(
+                    "INSERT INTO relay_flags (msg_id, flagged_by, reason, created_at) "
+                    "VALUES ($1, $2, $3, $4)",
+                    msg.msg_id, "relay-injection-scanner", flag_reason, now,
+                )
     except Exception as e:
         logger.error("[Compliance] persist_message failed: %s", e)
 
@@ -170,7 +190,8 @@ async def persist_message(msg: Any, ttl_seconds: int = _TTL_FREE) -> None:
         "to": msg.to_bot,
         "content": msg.content,  # always plaintext to SSE
         "ts": now,
-        "flagged": False,
+        "flagged": flagged,
+        "flag_reason": flag_reason if flagged else "",
     }
     _broadcast_sse(msg_data)
     asyncio.create_task(_notify_webhooks(msg_data))

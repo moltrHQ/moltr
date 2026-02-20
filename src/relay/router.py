@@ -15,6 +15,7 @@ Endpoints:
 from __future__ import annotations
 
 import logging
+import os
 import re
 import secrets
 import time
@@ -33,6 +34,7 @@ from src.relay.registry import (
 )
 from src.relay.audit import log_relay_event
 from src.relay import compliance as _compliance
+from src.relay.injection_scanner import InjectionScanner
 
 logger = logging.getLogger("moltr.relay")
 
@@ -95,6 +97,26 @@ def set_moltr_for_relay(moltr_instance: Any) -> None:
     """Inject the Moltr instance for OutputScanner access."""
     global _moltr
     _moltr = moltr_instance
+
+
+# ── Injection Scanner (deterministic, regex-only, no LLM) ─────────────────────
+_injection_scanner = InjectionScanner(
+    extra_patterns_file=None,  # will be set by _init_injection_scanner()
+)
+# RELAY_INJECTION_BLOCK=true → block and reject; default=false → flag and deliver
+_INJECTION_BLOCK_MODE = os.environ.get("RELAY_INJECTION_BLOCK", "false").lower() == "true"
+
+
+def init_injection_scanner(config_dir) -> None:
+    """Load extra injection patterns from config dir. Called once at startup."""
+    global _injection_scanner
+    from pathlib import Path
+    extra = Path(config_dir) / "relay_injection_patterns.yaml"
+    _injection_scanner = InjectionScanner(extra_patterns_file=extra)
+    logger.info(
+        "[Relay] InjectionScanner ready: %d patterns (block_mode=%s)",
+        _injection_scanner.pattern_count, _INJECTION_BLOCK_MODE,
+    )
 
 
 # ── Request Models ────────────────────────────────────────────────────────────
@@ -241,7 +263,7 @@ async def relay_send(
             detail=f"Message rejected by YAML schema filter: {schema_reason}",
         )
 
-    # ── Deliver ───────────────────────────────────────────────────────────────
+    # ── Prepare message (msg_id needed for injection flagging) ────────────────
     msg_id = secrets.token_hex(8)
     msg = RelayMessage(
         msg_id=msg_id,
@@ -251,6 +273,29 @@ async def relay_send(
         task_ref=req.task_ref,
     )
 
+    # ── Injection Scanner (deterministic regex, no LLM) ───────────────────────
+    inj = _injection_scanner.scan(req.content)
+    if inj.flagged:
+        log_relay_event(
+            "injection_flagged",
+            msg_id=msg_id,
+            from_bot=record.bot_id,
+            to_bot=req.to,
+            pattern=inj.pattern_name,
+            severity=inj.severity,
+        )
+        logger.warning(
+            "[Relay] INJECTION FLAGGED %s → %s | pattern=%s severity=%s",
+            record.bot_id, req.to, inj.pattern_name, inj.severity,
+        )
+        if _INJECTION_BLOCK_MODE:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Message blocked: prompt injection detected (pattern={inj.pattern_name})",
+            )
+        # Flag-and-deliver mode (default): deliver but persist as flagged
+
+    # ── Deliver ───────────────────────────────────────────────────────────────
     delivered = await registry.deliver(msg)
     if not delivered:
         raise HTTPException(status_code=404, detail=f"Target bot '{req.to}' not registered")
@@ -260,7 +305,11 @@ async def relay_send(
 
     # Compliance: persist message + notify SSE + webhooks (best-effort)
     import asyncio as _asyncio
-    _asyncio.create_task(_compliance.persist_message(msg))
+    _asyncio.create_task(_compliance.persist_message(
+        msg,
+        flagged=inj.flagged,
+        flag_reason=f"injection:{inj.pattern_name}" if inj.flagged else "",
+    ))
 
     log_relay_event(
         "send",
