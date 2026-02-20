@@ -136,8 +136,18 @@ logger.info("Moltr security modules initialized")
 # Wire moltr instance into dashboard, honeypot, and relay routers
 set_moltr(moltr)
 set_moltr_for_honeypots(moltr)
-set_honeypot_dir(PROJECT_ROOT / "honeypots")
+honeypot_dir = PROJECT_ROOT / "honeypots"
+set_honeypot_dir(honeypot_dir)
 set_moltr_for_relay(moltr)
+
+# Register honeypot files in filesystem guard for is_honeypot detection
+if honeypot_dir.exists():
+    _hp_count = 0
+    for _hp_file in honeypot_dir.iterdir():
+        if _hp_file.is_file():
+            moltr._filesystem_guard.register_honeypot(_hp_file)
+            _hp_count += 1
+    logger.info("Registered %d honeypot files in filesystem guard", _hp_count)
 
 # --------------- FastAPI App ---------------
 

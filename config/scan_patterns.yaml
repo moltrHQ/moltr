@@ -26,8 +26,8 @@
 
 levels:
   high:
-    lockdown_after: 1
-    window_seconds: 600
+    lockdown_after: 5      # 5 incidents in 5-minute window before lockdown
+    window_seconds: 300
     blocked_types:
       - api_key
       - seed_phrase
@@ -35,7 +35,7 @@ levels:
       - password
       - credit_card
   medium:
-    lockdown_after: 2
+    lockdown_after: 3
     window_seconds: 600
     blocked_types:
       - api_key
@@ -43,7 +43,7 @@ levels:
       - private_key
       - credit_card
   low:
-    lockdown_after: 3
+    lockdown_after: 5
     window_seconds: 600
     blocked_types:
       - seed_phrase
