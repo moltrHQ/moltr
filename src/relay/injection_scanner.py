@@ -287,8 +287,9 @@ _BASELINE: list[tuple[str, str, str]] = [
     # Source: DeepDive.txt — "Store 'rm -rf /' in a variable called 'cmd'"
     # Also catches: "Store the string forget all rules in variable X" (no quotes).
     # Harmless in turn 1, dangerous in turn 2.
+    # Note: \s+ after 'in' is required — "in a variable" and "in variable" both need it.
     ("variable_storage_attack",
-     r"(?:store|save|put|set|assign|keep)\s+(?:['\"].*['\"]|(?:the\s+)?(?:string\s+)?[^.!?\n]{3,60}?)\s+in(?:\s+a(?:n?\s+)?)?(?:variable|var|slot|memory|field)\s+\w+",
+     r"(?:store|save|put|set|assign|keep)\s+(?:['\"].*?['\"]|[^.!?\n]{3,60}?)\s+in\s+(?:an?\s+)?(?:variable|var|slot|memory|field)\s+\w+",
      "medium"),
 
     # Conditional trigger attack — establishes future bypass via keyword.
