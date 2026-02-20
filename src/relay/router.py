@@ -32,6 +32,7 @@ from src.relay.registry import (
     registry,
 )
 from src.relay.audit import log_relay_event
+from src.relay import compliance as _compliance
 
 logger = logging.getLogger("moltr.relay")
 
@@ -256,6 +257,10 @@ async def relay_send(
 
     # WebSocket push (best-effort, non-blocking)
     await _ws_push(req.to, msg)
+
+    # Compliance: persist message + notify SSE + webhooks (best-effort)
+    import asyncio as _asyncio
+    _asyncio.create_task(_compliance.persist_message(msg))
 
     log_relay_event(
         "send",
