@@ -39,6 +39,16 @@ allowed_domains:
   # Node packages
   - "registry.npmjs.org"
 
+  # Moltr / OpenRelay own services
+  - "moltr.tech"
+  - "*.moltr.tech"
+  - "openrelaynetwork.net"
+  - "*.openrelaynetwork.net"
+
+  # MiniMax AI (used by PicoClaw)
+  - "api.minimax.io"
+  - "*.minimax.io"
+
   # Local services
   - "localhost"
   - "127.0.0.1"

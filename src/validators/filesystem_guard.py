@@ -61,6 +61,7 @@ class FilesystemGuard:
         self._allowed_paths: list[str] = []
         self._blocked_paths: list[str] = []
         self._honeypots: list[Path] = []
+        self._honeypot_names: set[str] = set()  # filename-based fallback
         self._baseline: dict[str, str] = {}  # filepath -> sha256 hex
 
         if paths_file and paths_file.exists():
@@ -88,6 +89,8 @@ class FilesystemGuard:
         filepath = Path(filepath).resolve()
         if filepath not in self._honeypots:
             self._honeypots.append(filepath)
+        # Also track by filename for path-agnostic matching
+        self._honeypot_names.add(filepath.name)
 
     def get_honeypots(self) -> list[Path]:
         """Return all registered honeypot paths."""
@@ -162,7 +165,9 @@ class FilesystemGuard:
         except OSError:
             resolved = filepath
 
-        if resolved in self._honeypots:
+        # Check by resolved absolute path OR by filename (path-agnostic fallback)
+        is_honeypot_path = (resolved in self._honeypots) or (filepath.name in self._honeypot_names)
+        if is_honeypot_path:
             return AccessResult(
                 blocked=True,
                 is_honeypot=True,
