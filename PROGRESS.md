@@ -66,9 +66,10 @@
 - [ ] Canary Token Awareness (defensiv, System-Prompt Sentinel)
 
 ### Relay
-- [ ] Paid-Tier-Enforcement — `RegisterRequest admin_secret` Gate
-      + `POST /relay/admin/set-tier` Endpoint (Plan: breezy-giggling-lake.md Block 2c)
-- [ ] `RELAY_ADMIN_SECRET` in .env + .env.example
+- [x] Paid-Tier-Enforcement — `RegisterRequest admin_secret` Gate ✅ (router.py)
+      + `POST /relay/admin/set-tier` Endpoint ✅ (router.py)
+- [x] `RELAY_ADMIN_SECRET` in .env ✅ + `.env.example` erstellt ✅ (2026-02-20)
+- [x] IONOS Deploy — commit 489b53f, `docker compose up -d --build` ✅ (2026-02-20)
 
 ### Dungeoncore
 - [ ] Re-Init nötig — TestImport überschrieben echten DC (1 Key, falsch)
