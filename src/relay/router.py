@@ -283,6 +283,7 @@ async def relay_send(
             to_bot=req.to,
             pattern=inj.pattern_name,
             severity=inj.severity,
+            decoded_via=inj.decoded_via or "raw",
         )
         logger.warning(
             "[Relay] INJECTION FLAGGED %s → %s | pattern=%s severity=%s",
@@ -291,7 +292,7 @@ async def relay_send(
         if _INJECTION_BLOCK_MODE:
             raise HTTPException(
                 status_code=403,
-                detail=f"Message blocked: prompt injection detected (pattern={inj.pattern_name})",
+                detail=f"Message blocked: prompt injection detected (pattern={inj.pattern_name}, via={inj.decoded_via or 'raw'})",
             )
         # Flag-and-deliver mode (default): deliver but persist as flagged
 
