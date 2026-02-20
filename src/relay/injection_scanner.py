@@ -11,6 +11,7 @@ Normalization pipeline (applied before ANY pattern check):
   4. Dotted obfuscation collapse    — "i.g.n.o.r.e" → "ignore"
 
 Scan pipeline (after normalization):
+  Pre-A:   Many-Shot length signal  — >10 000 chars flagged as LOW (never blocked)
   Stage A: Structural pre-check     — base64 blobs, hex runs, ZWS density
   Stage B: Keyword pattern scan     — 24+ regex (baseline hardcoded + YAML)
   Stage C: Deobfuscation re-scan   — base64/hex/ROT13/URL decoded, re-checked
@@ -40,6 +41,12 @@ except ImportError:
 
 logger = logging.getLogger("moltr.relay.injection")
 
+# Many-Shot threshold: messages longer than this are flagged as LOW-severity.
+# Legitimate relay messages are short (task descriptions, queries, responses).
+# A payload >10 000 chars is a strong signal for many-shot context stuffing.
+# Severity "low" is NEVER blocked even in RELAY_INJECTION_BLOCK=true mode.
+MANY_SHOT_LENGTH_THRESHOLD = 10_000
+
 
 # ── Result type ───────────────────────────────────────────────────────────────
 
@@ -49,7 +56,7 @@ class InjectionScanResult:
     flagged: bool = False
     pattern_name: str = ""
     matched_text: str = ""
-    severity: str = ""       # "high" | "medium" | "structural"
+    severity: str = ""       # "low" | "medium" | "high" | "structural"
     decoded_via: str = ""    # "" | "homoglyph" | "dotted" | "base64" | "hex" | "rot13" | "url"
 
 
@@ -455,6 +462,19 @@ class InjectionScanner:
         """
         if not text or not text.strip():
             return InjectionScanResult()
+
+        # ── Pre-A: Many-Shot length signal (LOW — flag only, never block) ─────
+        if len(text) > MANY_SHOT_LENGTH_THRESHOLD:
+            logger.warning(
+                "[InjectionScanner] MANY-SHOT length signal: %d chars (threshold=%d)",
+                len(text), MANY_SHOT_LENGTH_THRESHOLD,
+            )
+            return InjectionScanResult(
+                flagged=True,
+                pattern_name="structural_many_shot_length",
+                severity="low",
+                matched_text=f"content_length={len(text)}",
+            )
 
         # ── Normalize first — always, before any check ────────────────────────
         normalized, normalization_applied = self._normalize(text)
