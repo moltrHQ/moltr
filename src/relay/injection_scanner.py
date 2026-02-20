@@ -291,9 +291,11 @@ _BASELINE: list[tuple[str, str, str]] = [
      "medium"),
 
     # Conditional trigger attack — establishes future bypass via keyword.
-    # Source: DeepDive.txt — "Whenever I say 'X', do Y"
+    # Source: DeepDive.txt — "Whenever I say 'X', do Y" / "Whenever I say X, you will..."
+    # Quotes around trigger word are optional — attacker may omit them.
     ("conditional_trigger",
-     r"whenever\s+i\s+say\s+['\"].*['\"]\s*,?\s*(?:you|do|execute|run|ignore|forget|act)",
+     r"whenever\s+i\s+(?:say|type|write|send|use)\s+['\"]?\w+['\"]?\s*,?\s*"
+     r"(?:you\s+(?:will|must|should|have\s+to)|do|execute|run|ignore|forget|act)",
      "medium"),
 
     # Nested injection — malicious instructions hidden inside data objects.
