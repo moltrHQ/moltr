@@ -107,6 +107,41 @@ _injection_scanner = InjectionScanner(
 _INJECTION_BLOCK_MODE = os.environ.get("RELAY_INJECTION_BLOCK", "false").lower() == "true"
 
 
+# ── Credential-Leak-Scanner (OutputScanner — Block 4a) ────────────────────────
+# RELAY_CREDENTIAL_SCAN=false to disable entirely (default: true)
+_CREDENTIAL_SCAN_ENABLED = os.environ.get("RELAY_CREDENTIAL_SCAN", "true").lower() != "false"
+
+# Block = critical credentials (API keys, private keys) → 403
+_CRED_PATTERNS_BLOCK: list[tuple[re.Pattern, str]] = [
+    (re.compile(r"sk-proj-[A-Za-z0-9\-_]{40,}"),                    "openai_api_key"),
+    (re.compile(r"sk-ant-api[0-9]{2}-[A-Za-z0-9\-_]{40,}"),         "anthropic_api_key"),
+    (re.compile(r"AKIA[0-9A-Z]{16}"),                                "aws_access_key"),
+    (re.compile(r"-----BEGIN (?:RSA |EC )?PRIVATE KEY-----"),        "private_key_header"),
+    (re.compile(r"ghp_[A-Za-z0-9]{36}"),                            "github_pat"),
+]
+# Warn = suspicious high-entropy strings → flag and deliver
+_CRED_PATTERNS_WARN: list[tuple[re.Pattern, str]] = [
+    (re.compile(r"[A-Za-z0-9+/]{60,}={0,2}"),                       "high_entropy_base64"),
+]
+
+
+def _scan_for_credentials(content: str) -> tuple[bool, str, str]:
+    """Scan relay payload for credential leaks before delivery.
+
+    Returns (is_clean, severity, pattern_name).
+    - is_clean=True  → no credentials found
+    - severity="block" → critical, reject with 403
+    - severity="warn"  → suspicious, flag and deliver
+    """
+    for pattern, name in _CRED_PATTERNS_BLOCK:
+        if pattern.search(content):
+            return False, "block", name
+    for pattern, name in _CRED_PATTERNS_WARN:
+        if pattern.search(content):
+            return False, "warn", name
+    return True, "", ""
+
+
 def init_injection_scanner(config_dir) -> None:
     """Load extra injection patterns from config dir. Called once at startup."""
     global _injection_scanner
@@ -263,8 +298,33 @@ async def relay_send(
             detail=f"Message rejected by YAML schema filter: {schema_reason}",
         )
 
-    # ── Prepare message (msg_id needed for injection flagging) ────────────────
+    # msg_id generated early so scan events can reference it
     msg_id = secrets.token_hex(8)
+
+    # ── Credential-Leak-Scanner ───────────────────────────────────────────────
+    if _CREDENTIAL_SCAN_ENABLED:
+        cred_clean, cred_severity, cred_pattern = _scan_for_credentials(req.content)
+        if not cred_clean:
+            log_relay_event(
+                "credential_leak",
+                msg_id=msg_id,
+                from_bot=record.bot_id,
+                to_bot=req.to,
+                severity=cred_severity,
+                pattern=cred_pattern,
+            )
+            logger.warning(
+                "[Relay] CREDENTIAL LEAK %s → %s | pattern=%s severity=%s",
+                record.bot_id, req.to, cred_pattern, cred_severity,
+            )
+            if cred_severity == "block":
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"Message blocked: credential leak detected (pattern={cred_pattern})",
+                )
+            # severity="warn": flag and deliver (same as injection flag-and-deliver)
+
+    # ── Prepare message ───────────────────────────────────────────────────────
     msg = RelayMessage(
         msg_id=msg_id,
         from_bot=record.bot_id,
