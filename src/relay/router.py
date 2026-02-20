@@ -353,12 +353,12 @@ async def relay_send(
             "[Relay] INJECTION FLAGGED %s → %s | pattern=%s severity=%s",
             record.bot_id, req.to, inj.pattern_name, inj.severity,
         )
-        if _INJECTION_BLOCK_MODE:
+        if _INJECTION_BLOCK_MODE and inj.severity != "low":
             raise HTTPException(
                 status_code=403,
                 detail=f"Message blocked: prompt injection detected (pattern={inj.pattern_name}, via={inj.decoded_via or 'raw'})",
             )
-        # Flag-and-deliver mode (default): deliver but persist as flagged
+        # Flag-and-deliver: default mode, and always for severity="low"
 
     # ── Deliver ───────────────────────────────────────────────────────────────
     delivered = await registry.deliver(msg)
