@@ -35,6 +35,8 @@ from src.relay.registry import (
     MAX_MESSAGE_SIZE_FREE,
     MAX_MESSAGE_SIZE_PAID,
     registry,
+    generate_keypair,
+    verify_signature,
 )
 from src.relay.audit import log_relay_event
 from src.relay import compliance as _compliance
@@ -164,6 +166,7 @@ class RegisterRequest(BaseModel):
     bot_id: str
     tier: str = "free"
     admin_secret: str = ""
+    generate_keypair: bool = False  # opt-in: generate Ed25519 keypair (Phase 2)
 
 
 class SendRequest(BaseModel):
@@ -222,11 +225,21 @@ async def relay_register(req: RegisterRequest):
             detail="bot_id must be alphanumeric with -._ only",
         )
 
-    relay_key = await registry.register(bot_id, tier=tier)
-    log_relay_event("register", bot_id=bot_id, tier=tier)
-    logger.info("[Relay] Registered bot: %s (tier: %s)", bot_id, tier)
+    # Ed25519 keypair (opt-in Phase 2)
+    ed25519_private_key: Optional[str] = None
+    ed25519_public_key: Optional[str] = None
+    if req.generate_keypair:
+        ed25519_private_key, ed25519_public_key = generate_keypair()
 
-    return {
+    relay_key = await registry.register(
+        bot_id, tier=tier, ed25519_pubkey=ed25519_public_key
+    )
+    log_relay_event("register", bot_id=bot_id, tier=tier,
+                    keypair=bool(ed25519_public_key))
+    logger.info("[Relay] Registered bot: %s (tier: %s, keypair: %s)",
+                bot_id, tier, bool(ed25519_public_key))
+
+    response: dict = {
         "bot_id": bot_id,
         "relay_key": relay_key,
         "tier": tier,
@@ -234,6 +247,13 @@ async def relay_register(req: RegisterRequest):
         "max_message_size": "2KB" if tier == "free" else "64KB",
         "message": "Store your relay_key securely — it cannot be recovered.",
     }
+    if ed25519_private_key:
+        response["ed25519_private_key"] = ed25519_private_key
+        response["ed25519_public_key"] = ed25519_public_key
+        response["keypair_note"] = (
+            "Store ed25519_private_key securely — it is returned ONCE and never stored."
+        )
+    return response
 
 
 @relay_router.post("/send")
@@ -241,13 +261,36 @@ async def relay_send(
     req: SendRequest,
     x_relay_bot: Optional[str] = Header(None),
     x_relay_key: Optional[str] = Header(None),
+    x_relay_signature: Optional[str] = Header(None),
 ):
     """Send a message to another registered bot.
 
     Message content is scanned by Moltr OutputScanner before delivery.
     Blocked messages (prompt injection, secrets) are rejected with 403.
+
+    X-Relay-Signature (optional, Phase 2): base64-encoded Ed25519 signature
+    over the UTF-8 message content. Required for bots registered with a keypair
+    — if the bot has a public key on file and no signature is provided, the
+    message is rejected with 401.
     """
     record = await _auth(x_relay_bot, x_relay_key)
+
+    # ── Ed25519 Signature verification (Phase 2 — keypair bots only) ─────────
+    if record.ed25519_pubkey:
+        if not x_relay_signature:
+            raise HTTPException(
+                status_code=401,
+                detail="X-Relay-Signature required for keypair-registered bots",
+            )
+        if not verify_signature(
+            record.ed25519_pubkey,
+            req.content.encode(),
+            x_relay_signature,
+        ):
+            log_relay_event("signature_invalid", from_bot=record.bot_id, to_bot=req.to)
+            logger.warning("[Relay] INVALID SIGNATURE from %s", record.bot_id)
+            raise HTTPException(status_code=401, detail="Invalid Ed25519 signature")
+        logger.debug("[Relay] Signature verified: %s", record.bot_id)
 
     # ── Size check ────────────────────────────────────────────────────────────
     max_size = MAX_MESSAGE_SIZE_FREE if record.tier == "free" else MAX_MESSAGE_SIZE_PAID
@@ -500,6 +543,26 @@ async def admin_set_tier(
 
     log_relay_event("admin_set_tier", bot_id=req.bot_id, tier=req.tier)
     return {"ok": True, "bot_id": req.bot_id, "tier": req.tier}
+
+
+@relay_router.get("/pubkey/{bot_id}")
+async def relay_pubkey(bot_id: str):
+    """Return the Ed25519 public key for a bot (Phase 2 — keypair-registered bots only).
+
+    Public keys are intentionally public — no auth required.
+    Returns 404 if bot is not registered or has no keypair.
+    """
+    record = await registry.get_record(bot_id)
+    if not record or not record.ed25519_pubkey:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No Ed25519 public key for bot '{bot_id}'",
+        )
+    return {
+        "bot_id": bot_id,
+        "ed25519_public_key": record.ed25519_pubkey,
+        "algorithm": "Ed25519",
+    }
 
 
 @relay_router.get("/status")

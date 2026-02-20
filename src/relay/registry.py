@@ -2,17 +2,24 @@
 # Copyright (C) 2026 Walter Troska / moltrHQ <hello@moltr.tech>
 # See LICENSE (AGPL-3.0) or LICENSE-COMMERCIAL for licensing terms.
 
-"""Moltr Relay Registry — bot registry with PBKDF2 key hashing.
+"""Moltr Relay Registry — bot registry with PBKDF2 key hashing + Ed25519 keypairs.
 
 In-memory store for fast access, PostgreSQL for persistence.
 If RELAY_DB_URL is not set, falls back to pure in-memory (dev mode).
 
 Bot registrations survive restarts. Inbox messages are ephemeral (in-memory).
+
+Ed25519 / HKDF (Phase 2):
+  Opt-in: bots request a keypair at registration (generate_keypair=True).
+  The private key is returned ONCE and never stored.
+  The public key is stored in the registry for signature verification.
+  HKDF (RFC 5869) derives short-lived session keys from the Ed25519 seed.
 """
 
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import logging
 import os
@@ -20,6 +27,13 @@ import secrets
 import time
 from dataclasses import dataclass, field
 from typing import Optional
+
+from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+    Ed25519PrivateKey,
+    Ed25519PublicKey,
+)
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 logger = logging.getLogger("moltr.relay.registry")
 
@@ -83,6 +97,8 @@ class BotRecord:
     daily_count: int = 0
     daily_reset: float = field(default_factory=time.time)
     inbox: list = field(default_factory=list)  # list[RelayMessage] — in-memory only
+    # Ed25519 Phase 2 — optional, None for classic relay_key-only bots
+    ed25519_pubkey: Optional[str] = None   # base64-encoded raw 32-byte public key
 
     def check_key(self, relay_key: str) -> bool:
         """Constant-time key verification using PBKDF2 hash."""
@@ -106,6 +122,67 @@ class BotRecord:
         if self.tier != "free":
             return "unlimited"
         return max(0, FREE_TIER_DAILY_LIMIT - self.daily_count)
+
+
+# ── Ed25519 + HKDF helpers (Phase 2) ─────────────────────────────────────────
+
+def generate_keypair() -> tuple[str, str]:
+    """Generate an Ed25519 keypair for a bot.
+
+    Returns (private_key_b64, public_key_b64) — raw 32-byte keys, base64-encoded.
+    The private key must be returned to the bot ONCE and never stored server-side.
+    """
+    privkey = Ed25519PrivateKey.generate()
+    priv_raw = privkey.private_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PrivateFormat.Raw,
+        encryption_algorithm=serialization.NoEncryption(),
+    )
+    pub_raw = privkey.public_key().public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw,
+    )
+    return base64.b64encode(priv_raw).decode(), base64.b64encode(pub_raw).decode()
+
+
+def derive_session_key(seed: bytes, context: str, length: int = 32) -> bytes:
+    """Derive a session key from strong seed material using HKDF (RFC 5869).
+
+    Appropriate for deriving short-lived ephemeral keys from an Ed25519 private
+    key seed. HKDF is the right primitive here — unlike PBKDF2 it is designed
+    for key derivation from already-strong material, not password stretching.
+
+    Args:
+        seed:    High-entropy seed bytes (e.g. Ed25519 raw private key, 32 bytes).
+        context: Domain-separation string, e.g. "relay-session:bot-id:timestamp".
+        length:  Output key length in bytes (default 32 = 256 bit).
+
+    Returns:
+        Derived key as bytes.
+    """
+    hkdf = HKDF(
+        algorithm=hashes.SHA256(),
+        length=length,
+        salt=None,   # no salt needed — seed is already high-entropy
+        info=context.encode(),
+    )
+    return hkdf.derive(seed)
+
+
+def verify_signature(public_key_b64: str, message: bytes, signature_b64: str) -> bool:
+    """Verify an Ed25519 signature.
+
+    Used to authenticate relay messages when a bot has registered with a keypair.
+    Returns True on valid signature, False on any error (fail-closed).
+    """
+    try:
+        pub_raw = base64.b64decode(public_key_b64)
+        sig_raw = base64.b64decode(signature_b64)
+        pubkey = Ed25519PublicKey.from_public_bytes(pub_raw)
+        pubkey.verify(sig_raw, message)
+        return True
+    except Exception:
+        return False
 
 
 # ── Registry ─────────────────────────────────────────────────────────────────
@@ -139,8 +216,17 @@ class BotRegistry:
         except Exception as e:
             logger.error("[Relay] Failed to load bots from DB: %s", e)
 
-    async def register(self, bot_id: str, tier: str = "free") -> str:
-        """Register (or re-register) a bot. Returns plaintext relay key."""
+    async def register(
+        self,
+        bot_id: str,
+        tier: str = "free",
+        ed25519_pubkey: Optional[str] = None,
+    ) -> str:
+        """Register (or re-register) a bot. Returns plaintext relay key.
+
+        ed25519_pubkey: base64-encoded raw public key (Phase 2, opt-in).
+        The private key is NOT passed here — it was returned to the caller already.
+        """
         relay_key = secrets.token_urlsafe(32)
         salt = os.urandom(16)
         dk = hashlib.pbkdf2_hmac("sha256", relay_key.encode(), salt, 100_000)
@@ -152,6 +238,7 @@ class BotRegistry:
             tier=tier,
             registered_at=now,
             daily_reset=now,
+            ed25519_pubkey=ed25519_pubkey,
         )
         async with self._lock:
             self._bots[bot_id] = record
