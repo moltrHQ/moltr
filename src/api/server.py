@@ -41,7 +41,10 @@ from src.api.dashboard_router import dashboard_router, set_moltr
 from src.api.honeypot_router import honeypot_router, set_moltr_for_honeypots, set_honeypot_dir
 from src.relay.router import relay_router, set_moltr_for_relay
 from src.relay.audit import init_audit
-from src.relay.registry import init_db, registry
+from src.relay.registry import init_db, registry, get_pool
+from src.relay.compliance import init_compliance_db
+from src.relay.compliance_router import compliance_router
+from src.dungeoncore.router import dungeoncore_router
 
 # --------------- Logging ---------------
 
@@ -144,9 +147,10 @@ limiter = Limiter(key_func=get_remote_address)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup: connect to DB and load relay bot registrations."""
+    """Startup: connect to DB, load relay bot registrations, init compliance tables."""
     await init_db()
     await registry.load_from_db()
+    await init_compliance_db(get_pool())
     yield
 
 
@@ -163,6 +167,8 @@ app.include_router(auth_router)
 app.include_router(dashboard_router)
 app.include_router(honeypot_router)
 app.include_router(relay_router)
+app.include_router(compliance_router)
+app.include_router(dungeoncore_router)
 
 
 @app.exception_handler(RateLimitExceeded)
@@ -184,6 +190,7 @@ PUBLIC_PATHS = {
     "/api/v1/auth/refresh",
     "/.well-known/moltr-manifest.json",
     "/honeypots/manifest",
+    "/dungeoncore/status",  # Session-Status ist public (kein Secret)
 }
 
 

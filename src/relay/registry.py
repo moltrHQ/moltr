@@ -236,5 +236,10 @@ class BotRegistry:
         return len(self._bots)
 
 
+def get_pool():
+    """Return the active asyncpg pool (or None in dev/in-memory mode)."""
+    return _pool
+
+
 # Module-level singleton
 registry = BotRegistry()
