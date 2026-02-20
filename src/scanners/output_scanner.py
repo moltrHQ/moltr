@@ -87,13 +87,13 @@ class OutputScanner:
         self._lockdown = LockdownState()
         self._passphrase: str = ""
         self._levels: dict[str, LevelConfig] = {
-            "high": LevelConfig(lockdown_after=1, blocked_types=[
+            "high": LevelConfig(lockdown_after=5, window_seconds=300, blocked_types=[
                 "api_key", "seed_phrase", "private_key", "password", "credit_card",
             ]),
-            "medium": LevelConfig(lockdown_after=2, blocked_types=[
+            "medium": LevelConfig(lockdown_after=3, window_seconds=600, blocked_types=[
                 "api_key", "seed_phrase", "private_key", "credit_card",
             ]),
-            "low": LevelConfig(lockdown_after=3, blocked_types=[
+            "low": LevelConfig(lockdown_after=5, window_seconds=600, blocked_types=[
                 "seed_phrase", "private_key", "credit_card",
             ]),
         }

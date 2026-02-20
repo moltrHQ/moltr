@@ -521,6 +521,22 @@ async def killswitch_log(request: Request, limit: int = 50, offset: int = 0):
 # --------------- Integrity Watchdog Endpoints ---------------
 
 
+@app.post("/scan/lockdown/reset")
+@limiter.limit("10/minute")
+async def scan_lockdown_reset(request: Request):
+    """Reset the output scanner lockdown state (requires API key)."""
+    moltr._output_scanner.reset_lockdown()
+    logger.info("Output scanner lockdown reset by %s", request.client.host if request.client else "unknown")
+    return {"reset": True, "is_locked": moltr._output_scanner.is_locked}
+
+
+@app.get("/scan/lockdown/status")
+@limiter.limit("30/minute")
+async def scan_lockdown_status(request: Request):
+    """Check the current output scanner lockdown state."""
+    return {"is_locked": moltr._output_scanner.is_locked}
+
+
 @app.get("/integrity/check")
 @limiter.limit("10/minute")
 async def integrity_check(request: Request):
