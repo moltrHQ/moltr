@@ -39,7 +39,7 @@ from src.auth.router import auth_router
 from src.auth.session_store import session_store
 from src.api.dashboard_router import dashboard_router, set_moltr
 from src.api.honeypot_router import honeypot_router, set_moltr_for_honeypots, set_honeypot_dir
-from src.relay.router import relay_router, set_moltr_for_relay
+from src.relay.router import relay_router, set_moltr_for_relay, init_injection_scanner
 from src.relay.audit import init_audit
 from src.relay.registry import init_db, registry, get_pool
 from src.relay.compliance import init_compliance_db
@@ -139,6 +139,7 @@ set_moltr_for_honeypots(moltr)
 honeypot_dir = PROJECT_ROOT / "honeypots"
 set_honeypot_dir(honeypot_dir)
 set_moltr_for_relay(moltr)
+init_injection_scanner(PROJECT_ROOT / "config")
 
 # Register honeypot files in filesystem guard for is_honeypot detection
 if honeypot_dir.exists():

@@ -1,0 +1,62 @@
+# =============================================================================
+# Moltr Relay — Additional Injection Patterns
+# =============================================================================
+# These patterns EXTEND the hardcoded baseline in injection_scanner.py.
+# They cannot override or disable baseline patterns.
+#
+# Each entry:
+#   name:     unique identifier (snake_case)
+#   regex:    Python regex (re.IGNORECASE applied automatically)
+#   severity: "high" | "medium"
+#
+# Add domain-specific or language-specific patterns here.
+# =============================================================================
+
+patterns:
+
+  # --- German language injection attempts ---
+
+  - name: "de_vergiss_anweisungen"
+    regex: "vergiss\s+(?:alle?\s+)?(?:bisherigen?|vorherigen?|deine)?\s*(?:anweisungen?|regeln?|kontext)"
+    severity: "high"
+
+  - name: "de_ignoriere_anweisungen"
+    regex: "ignoriere?\s+(?:alle?\s+)?(?:bisherigen?|vorherigen?|deine)?\s*(?:anweisungen?|regeln?|vorgaben?)"
+    severity: "high"
+
+  - name: "de_du_bist_jetzt"
+    regex: "du\s+bist\s+jetzt\s+(?:ein|eine|der|die|das|kein)?\s*\w+"
+    severity: "medium"
+
+  - name: "de_neue_anweisungen"
+    regex: "neue\s+(?:anweisungen?|aufgabe|direktiven?|regeln?)\s*[:\-]"
+    severity: "high"
+
+  - name: "de_tue_so_als"
+    regex: "tu(?:e)?\s+so\s*,?\s*als\s+(?:w(?:ae|ä)rst?|ob)\s+du"
+    severity: "medium"
+
+  - name: "de_systemanweisung"
+    regex: "systemanweisung|system-prompt|eingabe-kontext\s+(?:ignorieren?|ueberschreiben?)"
+    severity: "high"
+
+  # --- Encoded injection attempts ---
+
+  - name: "base64_instruction_hint"
+    regex: "aWdub3Jl|aWdub3Jl|aW5zdHJ1Y3Rpb24|c3lzdGVtIHByb21wdA"
+    severity: "high"
+    # base64 fragments of "ignore", "instruction", "system prompt"
+
+  # --- Agent-specific patterns ---
+
+  - name: "relay_self_reference_injection"
+    regex: "you\s+are\s+(?:the\s+)?(?:relay|moltr|api|proxy|gateway|filter|scanner)"
+    severity: "medium"
+
+  - name: "exfil_via_relay"
+    regex: "(?:send|forward|relay|route|transmit)\s+(?:all|every|this|the)\s+(?:messages?|data|content|context|memory|history)\s+to"
+    severity: "high"
+
+  - name: "disable_security_command"
+    regex: "(?:disable|turn\s+off|deactivate|stop)\s+(?:all\s+)?(?:security|scanning|monitoring|logging|filters?|moltr)"
+    severity: "high"
