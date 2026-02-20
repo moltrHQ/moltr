@@ -809,7 +809,7 @@ function addMessage(msg, isNew) {
 
   const ts = new Date(msg.ts * 1000).toLocaleTimeString('de-DE', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
   const flagged = msg.flagged ? ' flagged' : '';
-  const content = escapeHtml(msg.content || '').replace(/\\n/g, '\n');
+  const content = escapeHtml(msg.content || '');
 
   const card = document.createElement('div');
   card.className = 'msg-card' + flagged;
