@@ -555,6 +555,7 @@ def _format_killswitch_status() -> dict:
 
 # --------------- CSP Middleware ---------------
 
+# Strict CSP for API endpoints
 _CSP = (
     "default-src 'self'; "
     "script-src 'self'; "
@@ -565,12 +566,26 @@ _CSP = (
     "frame-ancestors 'none';"
 )
 
+# Relaxed CSP for served HTML pages (console, register) that use inline scripts + Google Fonts
+_CSP_HTML = (
+    "default-src 'self'; "
+    "script-src 'self' 'unsafe-inline'; "
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+    "img-src 'self' data:; "
+    "font-src 'self' https://fonts.gstatic.com; "
+    "connect-src 'self'; "
+    "frame-ancestors 'none';"
+)
+
+_HTML_PATHS = {"/relay/console", "/relay/register"}
+
 
 @app.middleware("http")
 async def add_security_headers(request: Request, call_next):
     """Add security headers to all responses."""
     response = await call_next(request)
-    response.headers["Content-Security-Policy"] = _CSP
+    csp = _CSP_HTML if request.url.path in _HTML_PATHS else _CSP
+    response.headers["Content-Security-Policy"] = csp
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
