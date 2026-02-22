@@ -49,6 +49,7 @@ from src.relay.registry import init_db, registry, get_pool
 from src.relay.compliance import init_compliance_db
 from src.relay.compliance_router import compliance_router
 from src.dungeoncore.router import dungeoncore_router
+from src.api.skillcheck_router import skillcheck_router, init_skillcheck
 
 # --------------- Logging ---------------
 
@@ -144,6 +145,7 @@ honeypot_dir = PROJECT_ROOT / "honeypots"
 set_honeypot_dir(honeypot_dir)
 set_moltr_for_relay(moltr)
 init_injection_scanner(PROJECT_ROOT / "config")
+init_skillcheck(PROJECT_ROOT / "config")
 
 # Register honeypot files in filesystem guard for is_honeypot detection
 if honeypot_dir.exists():
@@ -184,6 +186,7 @@ app.include_router(honeypot_router)
 app.include_router(relay_router)
 app.include_router(compliance_router)
 app.include_router(dungeoncore_router)
+app.include_router(skillcheck_router)
 
 
 @app.exception_handler(RateLimitExceeded)
@@ -206,6 +209,7 @@ PUBLIC_PATHS = {
     "/.well-known/moltr-manifest.json",
     "/honeypots/manifest",
     "/dungeoncore/status",  # Session-Status ist public (kein Secret)
+    "/api/v1/skillcheck/health",  # SkillCheck health — public für Agent-Discovery
 }
 
 
