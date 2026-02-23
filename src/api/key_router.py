@@ -18,11 +18,11 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 
 from src.api._limiter import limiter
-from src.api.tiers import RATE_LIMITS, TIER_FEATURES, Tier
+from src.api.tiers import RATE_LIMITS, TIER_FEATURES, Tier, require_tier
 
 logger = logging.getLogger("moltr.api.keys")
 
@@ -59,7 +59,8 @@ def init_key_router(key_store) -> None:
 
 @key_router.post("/keys", response_model=CreateKeyResponse)
 @limiter.limit("20/minute")
-async def create_key(request: Request, req: CreateKeyRequest, response: Response):
+async def create_key(request: Request, req: CreateKeyRequest, response: Response,
+                     _admin=Depends(require_tier(Tier.ENTERPRISE))):
     """Create a new API key. The plaintext key is returned ONCE — store it securely."""
     try:
         tier = Tier(req.tier)
@@ -87,7 +88,8 @@ async def create_key(request: Request, req: CreateKeyRequest, response: Response
 
 @key_router.get("/keys")
 @limiter.limit("30/minute")
-async def list_keys(request: Request, response: Response):
+async def list_keys(request: Request, response: Response,
+                    _admin=Depends(require_tier(Tier.ENTERPRISE))):
     """List all API keys (hashes not included)."""
     keys = _key_store.list_keys()
     return {
@@ -113,7 +115,8 @@ async def list_tiers(response: Response):
 
 @key_router.get("/keys/{key_prefix}")
 @limiter.limit("30/minute")
-async def get_key(key_prefix: str, request: Request, response: Response):
+async def get_key(key_prefix: str, request: Request, response: Response,
+                  _admin=Depends(require_tier(Tier.ENTERPRISE))):
     """Get details for a key by its prefix."""
     entry = _key_store.get_by_prefix(key_prefix)
     if not entry:
@@ -123,7 +126,8 @@ async def get_key(key_prefix: str, request: Request, response: Response):
 
 @key_router.delete("/keys/{key_prefix}")
 @limiter.limit("10/minute")
-async def revoke_key(key_prefix: str, request: Request, response: Response):
+async def revoke_key(key_prefix: str, request: Request, response: Response,
+                     _admin=Depends(require_tier(Tier.ENTERPRISE))):
     """Revoke a key immediately. Active requests using this key will fail on next check."""
     revoked = _key_store.revoke(key_prefix)
     if not revoked:
