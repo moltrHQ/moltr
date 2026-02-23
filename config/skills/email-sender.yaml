@@ -1,0 +1,27 @@
+id: email-sender
+name: Email Sender
+version: "1.0.0"
+description: Send emails via SMTP. Supports plain text and HTML. Works with IONOS, Gmail, Mailbox and any standard SMTP provider.
+category: communication
+tags: [email, smtp, notification, messaging]
+author: moltrHQ
+license: MIT
+scan_status: safe
+scan_date: "2026-02-23"
+compatibility: [claude, openai, any]
+manifest_type: tool_definition
+content: |
+  {
+    "name": "send_email",
+    "description": "Send an email to one or more recipients via SMTP.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "to": { "type": "string", "description": "Recipient email address" },
+        "subject": { "type": "string", "description": "Email subject line" },
+        "body": { "type": "string", "description": "Email body (plain text or HTML)" },
+        "html": { "type": "boolean", "description": "Set true if body is HTML", "default": false }
+      },
+      "required": ["to", "subject", "body"]
+    }
+  }

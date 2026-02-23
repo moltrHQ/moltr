@@ -1,0 +1,28 @@
+id: http-request
+name: HTTP Request
+version: "1.0.0"
+description: Make HTTP requests to external APIs. Supports GET, POST, PUT, DELETE. Handles JSON and form data. Essential for integrating with third-party services and REST APIs.
+category: api
+tags: [http, api, rest, request, fetch, network]
+author: moltrHQ
+license: MIT
+scan_status: safe
+scan_date: "2026-02-23"
+compatibility: [claude, openai, any]
+manifest_type: tool_definition
+content: |
+  {
+    "name": "http_request",
+    "description": "Make an HTTP request to an external URL.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "url": { "type": "string", "description": "Target URL" },
+        "method": { "type": "string", "enum": ["GET", "POST", "PUT", "DELETE", "PATCH"], "default": "GET" },
+        "headers": { "type": "object", "description": "HTTP headers as key-value pairs" },
+        "body": { "type": "string", "description": "Request body (JSON string or form data)" },
+        "timeout": { "type": "integer", "description": "Timeout in seconds", "default": 30 }
+      },
+      "required": ["url"]
+    }
+  }

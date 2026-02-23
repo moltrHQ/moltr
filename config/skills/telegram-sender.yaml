@@ -1,0 +1,27 @@
+id: telegram-sender
+name: Telegram Message Sender
+version: "1.0.0"
+description: Send messages to Telegram chats, groups, or channels via the Telegram Bot API. Supports text, markdown formatting, and reply threading.
+category: communication
+tags: [telegram, messaging, notification, bot, chat]
+author: moltrHQ
+license: MIT
+scan_status: safe
+scan_date: "2026-02-23"
+compatibility: [claude, openai, any]
+manifest_type: tool_definition
+content: |
+  {
+    "name": "send_telegram_message",
+    "description": "Send a message to a Telegram chat via Bot API.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "chat_id": { "type": "string", "description": "Telegram chat, group, or channel ID" },
+        "text": { "type": "string", "description": "Message text (supports Markdown)" },
+        "parse_mode": { "type": "string", "enum": ["Markdown", "HTML", "MarkdownV2"], "default": "Markdown" },
+        "reply_to_message_id": { "type": "integer", "description": "Message ID to reply to (optional)" }
+      },
+      "required": ["chat_id", "text"]
+    }
+  }

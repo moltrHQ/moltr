@@ -1,0 +1,26 @@
+id: file-reader
+name: File Reader
+version: "1.0.0"
+description: Read file contents from the local filesystem. Supports text files, JSON, YAML, Markdown, and more. Returns file content as a string with optional line range.
+category: filesystem
+tags: [file, read, filesystem, io, local]
+author: moltrHQ
+license: MIT
+scan_status: safe
+scan_date: "2026-02-23"
+compatibility: [claude, openai, any]
+manifest_type: tool_definition
+content: |
+  {
+    "name": "read_file",
+    "description": "Read the contents of a file from the local filesystem.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "path": { "type": "string", "description": "Absolute or relative path to the file" },
+        "offset": { "type": "integer", "description": "Line number to start reading from (1-indexed)", "default": 1 },
+        "limit": { "type": "integer", "description": "Maximum number of lines to read", "default": 200 }
+      },
+      "required": ["path"]
+    }
+  }

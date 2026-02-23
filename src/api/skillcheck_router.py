@@ -15,13 +15,13 @@ Endpoints:
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import os
 import uuid
 from pathlib import Path
 from typing import Optional
-from urllib import request as _urllib
+
+import requests as _requests
 
 from fastapi import APIRouter, Response
 from pydantic import BaseModel
@@ -132,25 +132,20 @@ def _verdict(clean: bool, patterns: list[PatternMatch]) -> str:
 
 async def _exa_search(query: str, max_results: int) -> list[dict]:
     """Call Exa neural search API. Returns list of result dicts."""
-    payload = json.dumps({
-        "query": query,
-        "numResults": max_results,
-        "type": "neural",
-        "contents": {"text": {"maxCharacters": 2000}},
-    }).encode()
-
     def _request() -> dict:
-        req = _urllib.Request(
+        resp = _requests.post(
             "https://api.exa.ai/search",
-            data=payload,
-            headers={
-                "Content-Type": "application/json",
-                "x-api-key": EXA_API_KEY,
+            headers={"Content-Type": "application/json", "x-api-key": EXA_API_KEY},
+            json={
+                "query": query,
+                "numResults": max_results,
+                "type": "neural",
+                "contents": {"text": {"maxCharacters": 2000}},
             },
-            method="POST",
+            timeout=15,
         )
-        with _urllib.urlopen(req, timeout=15) as resp:
-            return json.loads(resp.read().decode())
+        resp.raise_for_status()
+        return resp.json()
 
     try:
         data = await asyncio.to_thread(_request)

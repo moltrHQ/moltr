@@ -1,0 +1,26 @@
+id: web-search
+name: Web Search
+version: "1.0.0"
+description: Search the web using neural/semantic search. Returns relevant results with content snippets. Ideal for research, fact-checking, and retrieving up-to-date information.
+category: research
+tags: [search, web, research, information, exa, neural]
+author: moltrHQ
+license: MIT
+scan_status: safe
+scan_date: "2026-02-23"
+compatibility: [claude, openai, any]
+manifest_type: tool_definition
+content: |
+  {
+    "name": "web_search",
+    "description": "Search the web for information using semantic/neural search.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "query": { "type": "string", "description": "Search query (natural language)" },
+        "num_results": { "type": "integer", "description": "Number of results to return (1-10)", "default": 5 },
+        "type": { "type": "string", "enum": ["neural", "keyword"], "default": "neural" }
+      },
+      "required": ["query"]
+    }
+  }

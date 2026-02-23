@@ -1,0 +1,26 @@
+id: code-runner
+name: Code Runner
+version: "1.0.0"
+description: Execute Python or JavaScript/TypeScript code in a sandboxed environment. Returns stdout, stderr, and exit code. Useful for data processing, calculations, and automation tasks.
+category: development
+tags: [code, execute, python, javascript, sandbox, script, automation]
+author: moltrHQ
+license: MIT
+scan_status: safe
+scan_date: "2026-02-23"
+compatibility: [claude, openai, any]
+manifest_type: tool_definition
+content: |
+  {
+    "name": "run_code",
+    "description": "Execute code in a sandboxed environment and return the output.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "description": "Code to execute" },
+        "language": { "type": "string", "enum": ["python", "javascript", "typescript", "bash"], "default": "python" },
+        "timeout": { "type": "integer", "description": "Execution timeout in seconds", "default": 30 }
+      },
+      "required": ["code"]
+    }
+  }

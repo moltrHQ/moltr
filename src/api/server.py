@@ -50,6 +50,7 @@ from src.relay.compliance import init_compliance_db
 from src.relay.compliance_router import compliance_router
 from src.dungeoncore.router import dungeoncore_router
 from src.api.skillcheck_router import skillcheck_router, init_skillcheck
+from src.api.registry_router import registry_router, init_registry
 
 # --------------- Logging ---------------
 
@@ -146,6 +147,7 @@ set_honeypot_dir(honeypot_dir)
 set_moltr_for_relay(moltr)
 init_injection_scanner(PROJECT_ROOT / "config")
 init_skillcheck(PROJECT_ROOT / "config")
+init_registry(PROJECT_ROOT / "config")
 
 # Register honeypot files in filesystem guard for is_honeypot detection
 if honeypot_dir.exists():
@@ -187,6 +189,7 @@ app.include_router(relay_router)
 app.include_router(compliance_router)
 app.include_router(dungeoncore_router)
 app.include_router(skillcheck_router)
+app.include_router(registry_router)
 
 
 @app.exception_handler(RateLimitExceeded)
@@ -210,6 +213,7 @@ PUBLIC_PATHS = {
     "/honeypots/manifest",
     "/dungeoncore/status",  # Session-Status ist public (kein Secret)
     "/api/v1/skillcheck/health",  # SkillCheck health — public für Agent-Discovery
+    "/api/v1/registry/health",   # Registry health — public
 }
 
 
@@ -240,6 +244,10 @@ async def api_key_auth(request: Request, call_next):
 
     # Relay endpoints use their own X-Relay-Bot/X-Relay-Key auth (not global X-API-Key)
     if request.url.path.startswith("/relay/"):
+        return await call_next(request)
+
+    # Registry is public — agents discover skills without authentication
+    if request.url.path.startswith("/api/v1/registry/"):
         return await call_next(request)
 
     # Accept key via header or query param
