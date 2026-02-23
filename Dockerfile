@@ -15,8 +15,8 @@ COPY config/ config/
 # NOTE: honeypots/ are NOT baked into the image.
 # Mount them at runtime: docker run -v ./honeypots:/app/honeypots moltr
 
-# Create logs directory
-RUN mkdir -p logs
+# Create runtime directories (data/ persisted via Docker volume)
+RUN mkdir -p logs data
 
 # Create non-root user
 RUN useradd --create-home --shell /bin/bash moltr && \

@@ -28,6 +28,7 @@ services:
       - ./config:/app/config:ro
       - ./honeypots:/app/honeypots:ro
       - moltr-logs:/app/logs
+      - moltr-data:/app/data
     environment:
       - MOLTR_MODE=enforce
       - MOLTR_LOG_LEVEL=INFO
@@ -45,6 +46,7 @@ services:
 
 volumes:
   moltr-logs:
+  moltr-data:
   moltr-postgres:
 
 networks:

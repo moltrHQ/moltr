@@ -55,6 +55,9 @@ from src.api.verify_router import verify_router, init_verify
 from src.api.key_store import KeyStore
 from src.api.key_router import key_router, init_key_router
 from src.api.tiers import Tier
+from src.api.account_store import init_account_db, account_store
+from src.api.account_router import account_router, init_account_router
+from src.api.stripe_router import stripe_router, init_stripe_router
 
 # --------------- Logging ---------------
 
@@ -159,6 +162,8 @@ init_registry(PROJECT_ROOT / "config", scanner=_shared_scanner)
 init_verify(PROJECT_ROOT / "data")
 _key_store = KeyStore(PROJECT_ROOT / "data")
 init_key_router(_key_store)
+init_account_router(account_store, _key_store)
+init_stripe_router(account_store, _key_store)
 
 # Register honeypot files in filesystem guard for is_honeypot detection
 if honeypot_dir.exists():
@@ -179,6 +184,7 @@ async def lifespan(app: FastAPI):
     await init_db()
     await registry.load_from_db()
     await init_compliance_db(get_pool())
+    await init_account_db()
     yield
 
 
@@ -201,6 +207,8 @@ app.include_router(skillcheck_router)
 app.include_router(registry_router)
 app.include_router(verify_router)
 app.include_router(key_router)
+app.include_router(account_router)
+app.include_router(stripe_router)
 
 
 @app.exception_handler(RateLimitExceeded)
@@ -226,6 +234,16 @@ PUBLIC_PATHS = {
     "/api/v1/skillcheck/health",
     "/api/v1/registry/health",
     "/api/v1/registry/pubkey",
+    # Account public endpoints (auth is Bearer JWT, not X-API-Key)
+    "/api/v1/account/register",
+    "/api/v1/account/login",
+    "/api/v1/account/refresh",
+    "/api/v1/account/logout",
+    "/api/v1/account/verify-email",
+    "/api/v1/account/forgot-password",
+    "/api/v1/account/reset-password",
+    # Stripe webhook — validated via STRIPE_WEBHOOK_SECRET, not X-API-Key
+    "/api/v1/stripe/webhook",
 }
 
 # Path prefixes that are public (no auth)
@@ -235,6 +253,9 @@ PUBLIC_PREFIXES = (
     "/relay/",
     "/api/v1/registry/",
     "/api/v1/verify/",
+    # Account + Stripe routes: X-API-Key middleware bypassed, endpoint-level auth applies
+    "/api/v1/account/",
+    "/api/v1/stripe/",
     # Honeypot traps — intentionally public (attacker bait)
     "/internal/", "/admin/backup", "/v1/secrets", "/config/database",
 )

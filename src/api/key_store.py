@@ -148,6 +148,16 @@ class KeyStore:
                 return entry
         return None
 
+    def update_tier(self, key_prefix: str, new_tier_str: str) -> bool:
+        """Update Tier eines Keys per Prefix. Returns True wenn gefunden."""
+        for entry in self._keys.values():
+            if entry.key_prefix == key_prefix:
+                entry.tier = new_tier_str
+                self._save()
+                logger.info("[KeyStore] Tier updated for prefix %s → %s", key_prefix, new_tier_str)
+                return True
+        return False
+
     @property
     def count(self) -> int:
         return len(self._keys)
