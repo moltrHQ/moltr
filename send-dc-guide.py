@@ -1,6 +1,8 @@
-import urllib.request, json, time
+import urllib.request, json, time, os
 
-token = 'REDACTED_BOT_TOKEN'
+token = os.environ.get('TALON_BOT_TOKEN', '')
+if not token:
+    raise RuntimeError('TALON_BOT_TOKEN env var not set')
 chat_id = '-5272352642'
 
 msgs = [
