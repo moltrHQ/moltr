@@ -26,10 +26,11 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 
 from src.api._limiter import limiter
+from src.api.tiers import Tier, require_tier, tier_limit
 
 logger = logging.getLogger("moltr.api.verify")
 
@@ -178,8 +179,14 @@ def init_verify(data_dir: Path) -> None:
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @verify_router.post("/api/v1/registry/certify", response_model=CertifyResponse)
-@limiter.limit("10/minute")
-async def certify_skill(request: Request, req: CertifyRequest, response: Response):
+@limiter.limit("1000/minute")
+async def certify_skill(
+    request: Request,
+    req: CertifyRequest,
+    response: Response,
+    _tier_check=Depends(require_tier(Tier.VERIFIED)),
+    _rl=tier_limit("certify"),
+):
     """
     Issue a SafeSkills certificate for a skill.
 
@@ -273,8 +280,8 @@ async def certify_skill(request: Request, req: CertifyRequest, response: Respons
 
 
 @verify_router.get("/api/v1/verify/{cert_id}", response_model=VerifyResponse)
-@limiter.limit("120/minute")
-async def verify_certificate(cert_id: str, request: Request, response: Response):
+@limiter.limit("1000/minute")
+async def verify_certificate(cert_id: str, request: Request, response: Response, _rl=tier_limit("verify")):
     """
     Verify a SafeSkills certificate. Public — no API key required.
 

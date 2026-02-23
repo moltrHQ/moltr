@@ -23,8 +23,9 @@ from typing import Optional
 
 import requests as _requests
 from src.api._limiter import limiter
+from src.api.tiers import tier_limit
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel
 
 logger = logging.getLogger("moltr.api.skillcheck")
@@ -164,8 +165,8 @@ async def _exa_search(query: str, max_results: int) -> list[dict]:
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @skillcheck_router.post("/scan", response_model=ScanResponse)
-@limiter.limit("60/minute")
-async def skillcheck_scan(request: Request, req: ScanRequest, response: Response):
+@limiter.limit("1000/minute")
+async def skillcheck_scan(request: Request, req: ScanRequest, response: Response, _rl=tier_limit("skillcheck_scan")):
     """
     Scan submitted skill content for prompt injections.
     Returns cleaned content + detailed injection report.
@@ -192,8 +193,8 @@ async def skillcheck_scan(request: Request, req: ScanRequest, response: Response
 
 
 @skillcheck_router.post("/search", response_model=SearchResponse)
-@limiter.limit("20/minute")
-async def skillcheck_search(request: Request, req: SearchRequest, response: Response):
+@limiter.limit("1000/minute")
+async def skillcheck_search(request: Request, req: SearchRequest, response: Response, _rl=tier_limit("skillcheck_search")):
     """
     Search Exa for skills matching the query, scan every result,
     return clean results list with Moltr branding.

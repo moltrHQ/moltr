@@ -52,6 +52,9 @@ from src.relay.injection_scanner import InjectionScanner
 from src.api.skillcheck_router import skillcheck_router, init_skillcheck
 from src.api.registry_router import registry_router, init_registry
 from src.api.verify_router import verify_router, init_verify
+from src.api.key_store import KeyStore
+from src.api.key_router import key_router, init_key_router
+from src.api.tiers import Tier
 
 # --------------- Logging ---------------
 
@@ -154,6 +157,8 @@ _shared_scanner = InjectionScanner(
 init_skillcheck(PROJECT_ROOT / "config", scanner=_shared_scanner)
 init_registry(PROJECT_ROOT / "config", scanner=_shared_scanner)
 init_verify(PROJECT_ROOT / "data")
+_key_store = KeyStore(PROJECT_ROOT / "data")
+init_key_router(_key_store)
 
 # Register honeypot files in filesystem guard for is_honeypot detection
 if honeypot_dir.exists():
@@ -195,6 +200,7 @@ app.include_router(dungeoncore_router)
 app.include_router(skillcheck_router)
 app.include_router(registry_router)
 app.include_router(verify_router)
+app.include_router(key_router)
 
 
 @app.exception_handler(RateLimitExceeded)
@@ -209,68 +215,83 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
 
 MOLTR_API_KEY = os.environ.get("MOLTR_API_KEY", "")
 
-# Endpoints that don't require API key authentication
+# Paths fully public — no key needed, tier = FREE
 PUBLIC_PATHS = {
     "/health", "/docs", "/openapi.json",
     "/api/v1/auth/login",
     "/api/v1/auth/refresh",
     "/.well-known/moltr-manifest.json",
     "/honeypots/manifest",
-    "/dungeoncore/status",  # Session-Status ist public (kein Secret)
-    "/api/v1/skillcheck/health",  # SkillCheck health — public für Agent-Discovery
-    "/api/v1/registry/health",   # Registry health — public
-    "/api/v1/registry/pubkey",   # SafeSkills public key — public
+    "/dungeoncore/status",
+    "/api/v1/skillcheck/health",
+    "/api/v1/registry/health",
+    "/api/v1/registry/pubkey",
 }
 
+# Path prefixes that are public (no auth)
+PUBLIC_PREFIXES = (
+    "/dashboard",
+    "/api/v1/dashboard",
+    "/relay/",
+    "/api/v1/registry/",
+    "/api/v1/verify/",
+    # Honeypot traps — intentionally public (attacker bait)
+    "/internal/", "/admin/backup", "/v1/secrets", "/config/database",
+)
 
-@app.middleware("http")
-async def api_key_auth(request: Request, call_next):
-    """Require API key for all endpoints except health/docs."""
-    if not MOLTR_API_KEY:
-        # No key configured → allow all (backwards compatible)
-        return await call_next(request)
 
-    if request.url.path in PUBLIC_PATHS:
-        return await call_next(request)
-
-    # Dashboard SPA + static assets are public (auth handled by JWT in dashboard)
-    if request.url.path.startswith("/dashboard"):
-        return await call_next(request)
-
-    # Dashboard API endpoints use JWT auth (not X-API-Key)
-    if request.url.path.startswith("/api/v1/dashboard"):
-        return await call_next(request)
-
-    # Honeypot traps are intentionally public (attacker bait)
-    if request.url.path.startswith("/internal/") or \
-       request.url.path.startswith("/admin/backup") or \
-       request.url.path.startswith("/v1/secrets") or \
-       request.url.path.startswith("/config/database"):
-        return await call_next(request)
-
-    # Relay endpoints use their own X-Relay-Bot/X-Relay-Key auth (not global X-API-Key)
-    if request.url.path.startswith("/relay/"):
-        return await call_next(request)
-
-    # Registry is public — agents discover skills without authentication
-    if request.url.path.startswith("/api/v1/registry/"):
-        return await call_next(request)
-
-    # Verify is public — anyone can verify a certificate
-    if request.url.path.startswith("/api/v1/verify/"):
-        return await call_next(request)
-
-    # Accept key via header or query param
+def _extract_key(request: Request) -> str | None:
     key = request.headers.get("X-API-Key") or request.query_params.get("api_key")
     if not key:
         auth = request.headers.get("Authorization", "")
         if auth.startswith("Bearer "):
             key = auth[7:]
+    return key or None
 
-    if key != MOLTR_API_KEY:
-        logger.warning("AUTH DENIED from %s for %s", request.client.host if request.client else "unknown", request.url.path)
+
+@app.middleware("http")
+async def api_key_auth(request: Request, call_next):
+    """Authenticate requests and inject request.state.tier for rate limiting + feature gating."""
+    # Default tier for all requests — overridden below if key is valid
+    request.state.tier = Tier.FREE
+
+    if not MOLTR_API_KEY:
+        request.state.tier = Tier.ENTERPRISE
+        return await call_next(request)
+
+    path = request.url.path
+
+    # Public paths / prefixes — no key required, tier stays FREE
+    if path in PUBLIC_PATHS or any(path.startswith(p) for p in PUBLIC_PREFIXES):
+        # Still try to elevate tier if a valid key is supplied voluntarily
+        key = _extract_key(request)
+        if key:
+            if key == MOLTR_API_KEY:
+                request.state.tier = Tier.ENTERPRISE
+            elif (entry := _key_store.lookup(key)) is not None:
+                request.state.tier = entry.tier_enum
+        return await call_next(request)
+
+    # All other paths require authentication
+    key = _extract_key(request)
+    if not key:
+        logger.warning("AUTH DENIED (no key) from %s for %s",
+                       request.client.host if request.client else "unknown", path)
         return JSONResponse(status_code=401, content={"detail": "Invalid or missing API key"})
 
+    # Master admin key → enterprise tier, full access
+    if key == MOLTR_API_KEY:
+        request.state.tier = Tier.ENTERPRISE
+        return await call_next(request)
+
+    # KeyStore lookup
+    entry = _key_store.lookup(key)
+    if entry is None:
+        logger.warning("AUTH DENIED (invalid key) from %s for %s",
+                       request.client.host if request.client else "unknown", path)
+        return JSONResponse(status_code=401, content={"detail": "Invalid or missing API key"})
+
+    request.state.tier = entry.tier_enum
     return await call_next(request)
 
 # --------------- Request/Response Models ---------------

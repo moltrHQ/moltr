@@ -19,6 +19,9 @@ newgit.txt
 *.token
 *.key
 
+# Runtime data (keys, certs, state — never commit)
+data/
+
 # Honeypots (runtime-generated, never committed)
 honeypots/
 

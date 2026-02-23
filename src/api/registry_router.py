@@ -29,10 +29,11 @@ from typing import Optional
 
 import requests as _requests
 import yaml
-from fastapi import APIRouter, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel
 
 from src.api._limiter import limiter
+from src.api.tiers import Tier, require_tier, tier_limit
 
 logger = logging.getLogger("moltr.api.registry")
 
@@ -308,10 +309,11 @@ async def registry_health(response: Response):
 
 
 @registry_router.get("/skills", response_model=SkillListResponse)
-@limiter.limit("60/minute")
+@limiter.limit("1000/minute")
 async def list_skills(
     request: Request,
     response: Response,
+    _rl=tier_limit("registry_list"),
     q: str = Query(default="", description="Search query — all words must match (name, description, tags)"),
     tags: str = Query(default="", description="Comma-separated tag filter"),
     category: str = Query(default="", description="Filter by category"),
@@ -333,8 +335,8 @@ async def list_skills(
 
 
 @registry_router.get("/skills/{skill_id}")
-@limiter.limit("60/minute")
-async def get_skill(skill_id: str, request: Request, response: Response):
+@limiter.limit("1000/minute")
+async def get_skill(skill_id: str, request: Request, response: Response, _rl=tier_limit("registry_list")):
     """Get full details + manifest for a specific skill."""
     response.headers["X-Powered-By"] = "SafeSkills"
 
@@ -349,8 +351,8 @@ async def get_skill(skill_id: str, request: Request, response: Response):
 
 
 @registry_router.get("/skills/{skill_id}/manifest")
-@limiter.limit("60/minute")
-async def get_skill_manifest(skill_id: str, request: Request, response: Response):
+@limiter.limit("1000/minute")
+async def get_skill_manifest(skill_id: str, request: Request, response: Response, _rl=tier_limit("registry_list")):
     """Return the raw tool manifest for agent integration (JSON).
     Returns 422 if the skill's manifest content is not valid JSON.
     """
@@ -385,8 +387,8 @@ async def get_skill_manifest(skill_id: str, request: Request, response: Response
 
 
 @registry_router.post("/search", response_model=SearchResponse)
-@limiter.limit("20/minute")
-async def smart_search(request: Request, req: RegistrySearchRequest, response: Response):
+@limiter.limit("1000/minute")
+async def smart_search(request: Request, req: RegistrySearchRequest, response: Response, _rl=tier_limit("registry_search")):
     """
     Smart skill search for agents.
 
