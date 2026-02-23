@@ -36,6 +36,8 @@ services:
       # Optional: Telegram alerts
       # - MOLTR_TELEGRAM_BOT_TOKEN=your_bot_token
       # - MOLTR_TELEGRAM_CHAT_ID=your_chat_id
+    env_file:
+      - .env
     depends_on:
       postgres:
         condition: service_healthy
