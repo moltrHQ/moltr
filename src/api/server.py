@@ -25,9 +25,8 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from slowapi import Limiter
-from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+from src.api._limiter import limiter
 
 # Ensure project root is on sys.path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -49,6 +48,7 @@ from src.relay.registry import init_db, registry, get_pool
 from src.relay.compliance import init_compliance_db
 from src.relay.compliance_router import compliance_router
 from src.dungeoncore.router import dungeoncore_router
+from src.relay.injection_scanner import InjectionScanner
 from src.api.skillcheck_router import skillcheck_router, init_skillcheck
 from src.api.registry_router import registry_router, init_registry
 
@@ -146,8 +146,12 @@ honeypot_dir = PROJECT_ROOT / "honeypots"
 set_honeypot_dir(honeypot_dir)
 set_moltr_for_relay(moltr)
 init_injection_scanner(PROJECT_ROOT / "config")
-init_skillcheck(PROJECT_ROOT / "config")
-init_registry(PROJECT_ROOT / "config")
+# Create one shared InjectionScanner instance — used by both skillcheck and registry
+_shared_scanner = InjectionScanner(
+    extra_patterns_file=PROJECT_ROOT / "config" / "relay_injection_patterns.yaml"
+)
+init_skillcheck(PROJECT_ROOT / "config", scanner=_shared_scanner)
+init_registry(PROJECT_ROOT / "config", scanner=_shared_scanner)
 
 # Register honeypot files in filesystem guard for is_honeypot detection
 if honeypot_dir.exists():
@@ -161,8 +165,6 @@ if honeypot_dir.exists():
 # --------------- FastAPI App ---------------
 
 # --------------- Rate Limiting ---------------
-
-limiter = Limiter(key_func=get_remote_address)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

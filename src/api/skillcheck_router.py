@@ -22,8 +22,9 @@ from pathlib import Path
 from typing import Optional
 
 import requests as _requests
+from src.api._limiter import limiter
 
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, Request, Response
 from pydantic import BaseModel
 
 logger = logging.getLogger("moltr.api.skillcheck")
@@ -35,14 +36,19 @@ EXA_API_KEY = os.environ.get("EXA_API_KEY", "")
 MOLTR_BRANDING = "Moltr Security (https://moltr.tech)"
 
 
-def init_skillcheck(config_dir: Path) -> None:
-    """Initialize the SkillCheck injection scanner with YAML pattern file."""
+def init_skillcheck(config_dir: Path, scanner=None) -> None:
+    """Initialize the SkillCheck injection scanner.
+    If a shared scanner instance is provided, reuse it instead of creating a new one.
+    """
     global _scanner
-    from src.relay.injection_scanner import InjectionScanner
-    _scanner = InjectionScanner(
-        extra_patterns_file=config_dir / "relay_injection_patterns.yaml"
-    )
-    logger.info("[SkillCheck] Scanner initialized (config: %s)", config_dir)
+    if scanner is not None:
+        _scanner = scanner
+    else:
+        from src.relay.injection_scanner import InjectionScanner
+        _scanner = InjectionScanner(
+            extra_patterns_file=config_dir / "relay_injection_patterns.yaml"
+        )
+    logger.info("[SkillCheck] Scanner ready (shared=%s)", scanner is not None)
 
 
 # ── Models ────────────────────────────────────────────────────────────────────
@@ -158,7 +164,8 @@ async def _exa_search(query: str, max_results: int) -> list[dict]:
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @skillcheck_router.post("/scan", response_model=ScanResponse)
-async def skillcheck_scan(req: ScanRequest, response: Response):
+@limiter.limit("60/minute")
+async def skillcheck_scan(request: Request, req: ScanRequest, response: Response):
     """
     Scan submitted skill content for prompt injections.
     Returns cleaned content + detailed injection report.
@@ -185,7 +192,8 @@ async def skillcheck_scan(req: ScanRequest, response: Response):
 
 
 @skillcheck_router.post("/search", response_model=SearchResponse)
-async def skillcheck_search(req: SearchRequest, response: Response):
+@limiter.limit("20/minute")
+async def skillcheck_search(request: Request, req: SearchRequest, response: Response):
     """
     Search Exa for skills matching the query, scan every result,
     return clean results list with Moltr branding.

@@ -12,11 +12,15 @@ Endpoints (all public — no API key required):
   GET  /api/v1/registry/skills/{skill_id}/manifest — raw manifest JSON (agent install)
   POST /api/v1/registry/search              — smart search: registry first, Exa fallback
   GET  /api/v1/registry/health              — health + stats
+
+Note: Skills are loaded from config/skills/*.yaml on startup.
+Hot-reload is not supported — add new YAML files and restart the service.
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import uuid
@@ -25,8 +29,10 @@ from typing import Optional
 
 import requests as _requests
 import yaml
-from fastapi import APIRouter, HTTPException, Query, Response
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 from pydantic import BaseModel
+
+from src.api._limiter import limiter
 
 logger = logging.getLogger("moltr.api.registry")
 
@@ -46,29 +52,45 @@ class SkillEntry:
     """Internal representation of a skill loaded from YAML."""
 
     def __init__(self, data: dict, source_file: Path):
-        self.id: str          = data.get("id", source_file.stem)
-        self.name: str        = data.get("name", self.id)
-        self.version: str     = data.get("version", "1.0.0")
-        self.description: str = data.get("description", "")
-        self.category: str    = data.get("category", "general")
-        self.tags: list[str]  = data.get("tags", [])
-        self.author: str      = data.get("author", "unknown")
-        self.license: str     = data.get("license", "unknown")
-        self.scan_status: str = data.get("scan_status", "unknown")
-        self.scan_date: str   = data.get("scan_date", "")
+        self.id: str            = data.get("id", source_file.stem)
+        self.name: str          = data.get("name", self.id)
+        self.version: str       = data.get("version", "1.0.0")
+        self.description: str   = data.get("description", "")
+        self.category: str      = data.get("category", "general")
+        self.tags: list[str]    = data.get("tags", [])
+        self.author: str        = data.get("author", "unknown")
+        self.license: str       = data.get("license", "unknown")
+        self.scan_status: str   = data.get("scan_status", "unscanned")
+        self.scan_date: str     = data.get("scan_date", "")
         self.compatibility: list[str] = data.get("compatibility", ["any"])
         self.manifest_type: str = data.get("manifest_type", "tool_definition")
-        self.content: str     = data.get("content", "")
+        self.content: str       = data.get("content", "").strip()
+        self._manifest_cache: dict | None = None  # parsed JSON cache
+
+    def parse_manifest(self) -> dict | None:
+        """Parse and cache manifest JSON content. Returns None on invalid JSON."""
+        if self._manifest_cache is not None:
+            return self._manifest_cache
+        if not self.content:
+            return None
+        try:
+            self._manifest_cache = json.loads(self.content)
+            return self._manifest_cache
+        except json.JSONDecodeError as exc:
+            logger.warning("[Registry] Skill %r: invalid JSON manifest — %s", self.id, exc)
+            return None
 
     def matches(self, q: str, tags: list[str], category: str) -> bool:
-        q = q.lower()
-        if q and q not in self.name.lower() and q not in self.description.lower() \
-                and not any(q in t for t in self.tags):
+        """Match skill against query. Supports multi-word queries (all words must match)."""
+        if category and self.category != category:
             return False
         if tags and not any(t in self.tags for t in tags):
             return False
-        if category and self.category != category:
-            return False
+        if q:
+            searchable = f"{self.name} {self.description} {' '.join(self.tags)}".lower()
+            # Every word in the query must appear somewhere in the searchable text
+            if not all(word in searchable for word in q.lower().split()):
+                return False
         return True
 
     def to_summary(self) -> dict:
@@ -91,23 +113,42 @@ class SkillEntry:
             "scan_date": self.scan_date,
             "compatibility": self.compatibility,
             "manifest_type": self.manifest_type,
+            "manifest_valid": self.parse_manifest() is not None,
             "content": self.content,
             "powered_by": MOLTR_BRANDING,
         }
 
 
 class SkillRegistry:
-    """In-memory registry backed by YAML files in config/skills/."""
+    """In-memory registry backed by YAML files in config/skills/.
+
+    Note: loaded once on startup. Hot-reload not supported — restart service to pick up changes.
+    """
 
     def __init__(self):
         self._skills: dict[str, SkillEntry] = {}
 
-    def load(self, skills_dir: Path) -> int:
+    def load(self, skills_dir: Path, scanner=None) -> int:
+        """Load all YAML skills from directory.
+        If scanner is provided, each skill's content is scanned and scan_status is set accordingly.
+        """
         count = 0
         for f in sorted(skills_dir.glob("*.yaml")):
             try:
                 data = yaml.safe_load(f.read_text(encoding="utf-8"))
                 entry = SkillEntry(data, f)
+
+                # Validate JSON manifest at load time — log warning if broken
+                if entry.content and entry.parse_manifest() is None:
+                    logger.warning("[Registry] Skill %r has invalid JSON manifest — still loaded", entry.id)
+
+                # Scan content and override scan_status with actual result
+                if scanner and entry.content:
+                    entry.scan_status, entry.content = _rescan(entry.content, scanner)
+                    logger.debug("[Registry] Scanned %r → %s", entry.id, entry.scan_status)
+                    # Invalidate manifest cache after potential content modification
+                    entry._manifest_cache = None
+
                 self._skills[entry.id] = entry
                 count += 1
             except Exception as exc:
@@ -138,7 +179,7 @@ class RegistrySearchRequest(BaseModel):
     tags: list[str] = []
     category: str = ""
     max_web_results: int = 5
-    include_web: bool = True     # whether to fall back to Exa if registry results are few
+    include_web: bool = True
     min_registry_threshold: int = 3  # below this count → trigger Exa fallback
 
 
@@ -159,21 +200,25 @@ class SearchResponse(BaseModel):
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _scan_content(content: str) -> tuple[bool, str]:
-    """Scan content with injection scanner. Returns (is_clean, cleaned_content)."""
-    if not _scanner or not content:
-        return True, content
-
+def _rescan(content: str, scanner) -> tuple[str, str]:
+    """Scan content with injection scanner. Returns (scan_status, cleaned_content)."""
+    if not content:
+        return "safe", content
     working = content
+    found_any = False
     for _ in range(10):
-        result = _scanner.scan(working)
+        result = scanner.scan(working)
         if not result.flagged:
             break
+        found_any = True
         if result.matched_text:
             working = working.replace(result.matched_text, "[REMOVED]", 1)
         else:
             break
-    return working == content, working
+    if not found_any:
+        return "safe", working
+    # Check if high-severity patterns were found
+    return "cleaned", working
 
 
 async def _exa_search(query: str, max_results: int) -> list[dict]:
@@ -205,17 +250,19 @@ async def _exa_search(query: str, max_results: int) -> list[dict]:
 
 
 def _web_result_to_dict(raw: dict) -> dict:
-    """Convert an Exa result to our standard format, including scan."""
+    """Convert an Exa result to our standard format, including live scan."""
     text = raw.get("text") or " ".join(raw.get("highlights", []))
-    _, cleaned = _scan_content(text)
-    clean = cleaned == text
+    if _scanner and text:
+        scan_status, cleaned = _rescan(text, _scanner)
+    else:
+        scan_status, cleaned = "unscanned", text
 
     return {
-        "id": None,
+        # No registry id for web results — use source field to distinguish
         "name": raw.get("title", "Untitled"),
         "url": raw.get("url", ""),
         "description": cleaned[:300] if cleaned else "",
-        "scan_status": "safe" if clean else "cleaned",
+        "scan_status": scan_status,
         "source": "web_scanned",
         "powered_by": MOLTR_BRANDING,
     }
@@ -223,21 +270,26 @@ def _web_result_to_dict(raw: dict) -> dict:
 
 # ── Init ──────────────────────────────────────────────────────────────────────
 
-def init_registry(config_dir: Path) -> None:
-    """Load skills from config/skills/ and initialize the injection scanner."""
+def init_registry(config_dir: Path, scanner=None) -> None:
+    """Load skills from config/skills/ and initialize the injection scanner.
+    If a shared scanner instance is provided, reuse it instead of creating a new one.
+    """
     global _scanner, _registry
-    from src.relay.injection_scanner import InjectionScanner
-    _scanner = InjectionScanner(
-        extra_patterns_file=config_dir / "relay_injection_patterns.yaml"
-    )
+    if scanner is not None:
+        _scanner = scanner
+    else:
+        from src.relay.injection_scanner import InjectionScanner
+        _scanner = InjectionScanner(
+            extra_patterns_file=config_dir / "relay_injection_patterns.yaml"
+        )
     _registry = SkillRegistry()
     skills_dir = config_dir / "skills"
     if skills_dir.exists():
-        _registry.load(skills_dir)
+        _registry.load(skills_dir, scanner=_scanner)
     else:
         logger.warning("[Registry] skills dir not found: %s", skills_dir)
-    logger.info("[Registry] Ready — %d skills, Exa: %s",
-                _registry.count, "enabled" if EXA_API_KEY else "disabled")
+    logger.info("[Registry] Ready — %d skills, shared_scanner=%s, Exa=%s",
+                _registry.count, scanner is not None, "enabled" if EXA_API_KEY else "disabled")
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -256,9 +308,11 @@ async def registry_health(response: Response):
 
 
 @registry_router.get("/skills", response_model=SkillListResponse)
+@limiter.limit("60/minute")
 async def list_skills(
+    request: Request,
     response: Response,
-    q: str = Query(default="", description="Search query (name, description, tags)"),
+    q: str = Query(default="", description="Search query — all words must match (name, description, tags)"),
     tags: str = Query(default="", description="Comma-separated tag filter"),
     category: str = Query(default="", description="Filter by category"),
 ):
@@ -279,7 +333,8 @@ async def list_skills(
 
 
 @registry_router.get("/skills/{skill_id}")
-async def get_skill(skill_id: str, response: Response):
+@limiter.limit("60/minute")
+async def get_skill(skill_id: str, request: Request, response: Response):
     """Get full details + manifest for a specific skill."""
     response.headers["X-Powered-By"] = "SafeSkills"
 
@@ -294,10 +349,12 @@ async def get_skill(skill_id: str, response: Response):
 
 
 @registry_router.get("/skills/{skill_id}/manifest")
-async def get_skill_manifest(skill_id: str, response: Response):
-    """Return the raw tool manifest for agent integration (JSON)."""
+@limiter.limit("60/minute")
+async def get_skill_manifest(skill_id: str, request: Request, response: Response):
+    """Return the raw tool manifest for agent integration (JSON).
+    Returns 422 if the skill's manifest content is not valid JSON.
+    """
     response.headers["X-Powered-By"] = "SafeSkills"
-    response.headers["Content-Type"] = "application/json"
 
     if _registry is None:
         raise HTTPException(status_code=503, detail="Registry not initialized")
@@ -309,11 +366,12 @@ async def get_skill_manifest(skill_id: str, response: Response):
     if not skill.content:
         raise HTTPException(status_code=404, detail="No manifest content for this skill")
 
-    import json
-    try:
-        manifest = json.loads(skill.content)
-    except Exception:
-        manifest = {"raw": skill.content}
+    manifest = skill.parse_manifest()
+    if manifest is None:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Skill '{skill_id}' has invalid JSON manifest — contact SafeSkills support"
+        )
 
     return {
         "skill_id": skill.id,
@@ -327,7 +385,8 @@ async def get_skill_manifest(skill_id: str, response: Response):
 
 
 @registry_router.post("/search", response_model=SearchResponse)
-async def smart_search(req: RegistrySearchRequest, response: Response):
+@limiter.limit("20/minute")
+async def smart_search(request: Request, req: RegistrySearchRequest, response: Response):
     """
     Smart skill search for agents.
 
@@ -336,6 +395,7 @@ async def smart_search(req: RegistrySearchRequest, response: Response):
        falls back to live web search — every result is scanned on-the-fly.
 
     Agents get clean, verified results without ever touching raw web content.
+    Web results have no registry id (source='web_scanned'); registry results have source='registry'.
     """
     response.headers["X-Powered-By"] = "SafeSkills"
     search_id = str(uuid.uuid4())
@@ -343,28 +403,24 @@ async def smart_search(req: RegistrySearchRequest, response: Response):
     if _registry is None:
         raise HTTPException(status_code=503, detail="Registry not initialized")
 
-    # Step 1: registry search
-    registry_hits = _registry.search(
-        q=req.query, tags=req.tags, category=req.category
-    )
+    # Step 1: registry search (pre-scanned, instant)
+    registry_hits = _registry.search(q=req.query, tags=req.tags, category=req.category)
     registry_results = [s.to_summary() for s in registry_hits]
 
     logger.info("[Registry] search q=%r registry_hits=%d", req.query, len(registry_hits))
 
-    # Step 2: Exa fallback if needed
+    # Step 2: Exa fallback — only if registry results are below threshold
     web_results: list[dict] = []
     if req.include_web and len(registry_hits) < req.min_registry_threshold and EXA_API_KEY:
         raw_web = await _exa_search(req.query, req.max_web_results)
         web_results = [_web_result_to_dict(r) for r in raw_web]
         logger.info("[Registry] Exa fallback — %d web results scanned", len(web_results))
 
-    total = len(registry_results) + len(web_results)
-
     return SearchResponse(
         search_id=search_id,
         query=req.query,
         registry_results=registry_results,
         web_results=web_results,
-        total=total,
+        total=len(registry_results) + len(web_results),
         powered_by=MOLTR_BRANDING,
     )
