@@ -51,6 +51,7 @@ from src.dungeoncore.router import dungeoncore_router
 from src.relay.injection_scanner import InjectionScanner
 from src.api.skillcheck_router import skillcheck_router, init_skillcheck
 from src.api.registry_router import registry_router, init_registry
+from src.api.verify_router import verify_router, init_verify
 
 # --------------- Logging ---------------
 
@@ -152,6 +153,7 @@ _shared_scanner = InjectionScanner(
 )
 init_skillcheck(PROJECT_ROOT / "config", scanner=_shared_scanner)
 init_registry(PROJECT_ROOT / "config", scanner=_shared_scanner)
+init_verify(PROJECT_ROOT / "data")
 
 # Register honeypot files in filesystem guard for is_honeypot detection
 if honeypot_dir.exists():
@@ -192,6 +194,7 @@ app.include_router(compliance_router)
 app.include_router(dungeoncore_router)
 app.include_router(skillcheck_router)
 app.include_router(registry_router)
+app.include_router(verify_router)
 
 
 @app.exception_handler(RateLimitExceeded)
@@ -216,6 +219,7 @@ PUBLIC_PATHS = {
     "/dungeoncore/status",  # Session-Status ist public (kein Secret)
     "/api/v1/skillcheck/health",  # SkillCheck health — public für Agent-Discovery
     "/api/v1/registry/health",   # Registry health — public
+    "/api/v1/registry/pubkey",   # SafeSkills public key — public
 }
 
 
@@ -250,6 +254,10 @@ async def api_key_auth(request: Request, call_next):
 
     # Registry is public — agents discover skills without authentication
     if request.url.path.startswith("/api/v1/registry/"):
+        return await call_next(request)
+
+    # Verify is public — anyone can verify a certificate
+    if request.url.path.startswith("/api/v1/verify/"):
         return await call_next(request)
 
     # Accept key via header or query param
